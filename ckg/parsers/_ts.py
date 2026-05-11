@@ -18,7 +18,9 @@ def get_ts_parser(language: str) -> Parser:
     # which fails on newer tree-sitter releases — the language-pack's grammar
     # object is its own type and `Parser.language` only accepts a
     # `tree_sitter.Language`. Using `get_parser` directly side-steps that.
-    from tree_sitter_language_pack import get_parser as _get_parser  # pyright: ignore[reportMissingImports]
+    from tree_sitter_language_pack import (
+        get_parser as _get_parser,  # pyright: ignore[reportMissingImports]
+    )
 
     return _get_parser(language)
 
