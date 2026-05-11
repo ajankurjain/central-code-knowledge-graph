@@ -1,0 +1,238 @@
+# central-code-knowledge-graph
+
+> A **central, multi-repo code knowledge graph** for AI agents. Neo4j-backed,
+> Tree-sitter parsing, full-text + vector search, MCP-ready. Drop-in for
+> Cursor / VS Code / Claude Code.
+
+One server that:
+
+- ingests many repositories (not just one) and keeps them incrementally fresh
+- stores them as a Neo4j property graph (`File`, `Class`, `Function`,
+  `Module` + `CONTAINS`, `DEFINES`, `HAS_METHOD`, `CALLS`, `IMPORTS`)
+- exposes **REST**, **MCP/JSON-RPC**, and a **`ckg` CLI**
+- supports **structural** queries (callers, callees, imports, impact radius),
+  **full-text** search, and **semantic** vector search
+- secures every endpoint with **scoped API tokens** (argon2id-hashed)
+- runs as a single `docker compose up`
+
+## Why
+
+| Need | How this server delivers |
+|---|---|
+| Rock-solid, won't fall over | Stateless API + workers; Neo4j/Postgres/Redis run with healthchecks + `restart: unless-stopped`; horizontal scale via `--scale worker=N` |
+| Fast relationship search for AI agents | Native graph DB (Cypher) + Lucene FTS + vector index — all in Neo4j |
+| Multi-language | Tree-sitter via `tree-sitter-language-pack`: Python + JS/TS today, Rust/Ruby/Go/Java/C++ pluggable (one file under `ckg/parsers/`) |
+| Context for AI tools | Built-in MCP HTTP server → Cursor, VS Code, Claude Code drop in |
+| CLI for automation | `ckg` Typer CLI: register, ingest, query, search |
+| Spec-driven | Auto-generated OpenAPI at `/docs`; ADRs under `docs/adr/`; contract-first |
+| Whole-codebase index | One Neo4j graph spans all registered repos |
+| Neo4j-backed | Functions, classes, files, imports, calls all stored as labeled nodes + typed relationships |
+| Secure | API tokens with scopes (`admin`, `repo:write`, `repo:read`); hashed at rest |
+
+## Architecture
+
+```
+                      ┌──────────────┐
+   AI agents ───MCP──▶│              │
+   CLI (ckg) ──REST──▶│   FastAPI    │──▶ Auth (API tokens, scopes)
+   Web UI ────GQL───▶ │              │──▶ Audit log
+                      └──────┬───────┘
+                             │
+            ┌────────────────┼─────────────────────────────┐
+            ▼                ▼                             ▼
+     ┌────────────┐   ┌─────────────┐              ┌───────────────┐
+     │ Neo4j 5    │   │ Postgres    │              │ Redis         │
+     │ graph +    │   │ repos +     │              │ cache + queue │
+     │ vector +   │   │ tokens +    │              └───────┬───────┘
+     │ FTS        │   │ runs +      │                      │
+     └────────────┘   │ audit       │              ┌───────▼───────┐
+                      └─────────────┘              │ Celery workers│
+                                                   │  - clone      │
+                                                   │  - parse      │
+                                                   │  - embed      │
+                                                   │  - write graph│
+                                                   └───────┬───────┘
+                                                           │
+                                                   ┌───────▼───────┐
+                                                   │ Tree-sitter   │
+                                                   │ parsers       │
+                                                   │ Py / JS / TS  │
+                                                   │ (Rust/Ruby/   │
+                                                   │  Go/Java soon)│
+                                                   └───────────────┘
+```
+
+Full design rationale: [docs/adr/0001-architecture.md](docs/adr/0001-architecture.md).
+
+## Quickstart
+
+### 1. Prerequisites
+
+- Docker Desktop (macOS / Windows) or Docker Engine + Compose v2 (Linux)
+- 8 GB free RAM recommended
+- Python 3.11+ on the host **only if** you want the CLI locally
+
+### 2. Clone and configure
+
+```bash
+git clone https://github.com/ajankurjain/central-code-knowledge-graph.git
+cd central-code-knowledge-graph
+cp .env.example .env
+```
+
+Edit `.env` and replace every `change-me-*`. Generate strong values with:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+### 3. Start the stack
+
+```bash
+make up
+```
+
+(or `docker compose up -d`)
+
+First boot is 1–3 minutes (image pulls + Neo4j schema init).
+
+```bash
+curl http://localhost:8080/readyz
+# {"ready": true, "checks": {"neo4j": true, "postgres": true, "redis": true}, ...}
+```
+
+Open the auto-generated API docs: <http://localhost:8080/docs>
+
+### 4. Install the CLI
+
+```bash
+pip install -e .             # or: pipx install -e .
+export CKG_SERVER=http://localhost:8080
+ckg login --token "$(grep ^CKG_BOOTSTRAP_TOKEN .env | cut -d= -f2)"
+
+# Mint a real token, then re-login with it:
+ckg token create my-laptop --scope repo:read --scope repo:write
+ckg login --token ckg_xxxxxxxxxxxxxxxxxxxx
+```
+
+### 5. Ingest your first repo
+
+```bash
+ckg repo register my-repo file:///Users/you/code/my-repo --branch main
+ckg repo ingest    my-repo
+ckg repo runs      my-repo          # watch progress
+ckg graph stats
+ckg search keyword "ingest pipeline"
+ckg search semantic "where do we parse Tree-sitter trees?"
+ckg graph callers my-repo my.module.foo --depth 2
+```
+
+### 6. Hook up your editor
+
+| Editor | Guide |
+|---|---|
+| Cursor | [integrations/cursor/README.md](integrations/cursor/README.md) |
+| VS Code (Copilot Chat / Cline / Roo Code) | [integrations/vscode/README.md](integrations/vscode/README.md) |
+| Claude Code | [integrations/claude-code/README.md](integrations/claude-code/README.md) |
+
+## What the graph looks like
+
+```
+(Repo)-[:CONTAINS]->(File)-[:DEFINES]->(Class)-[:HAS_METHOD]->(Function)
+                          -[:DEFINES]->(Function)-[:CALLS]->(Function)
+                          -[:IMPORTS]->(Module|File)
+```
+
+`Function` nodes carry a `embedding` vector property indexed for cosine
+similarity. Names + docs feed Lucene full-text indexes. So one Cypher store
+answers all three styles of query (structural / keyword / semantic).
+
+## API surface (short)
+
+Full reference: [docs/api.md](docs/api.md).
+
+| Verb | Path | Purpose |
+|---|---|---|
+| `GET` | `/healthz` | Liveness |
+| `GET` | `/readyz` | Readiness (per-store) |
+| `POST` | `/v1/tokens` | Mint a token (admin) |
+| `GET` | `/v1/tokens` | List tokens (admin) |
+| `DELETE` | `/v1/tokens/{id}` | Revoke (admin) |
+| `POST` | `/v1/repos` | Register a repo |
+| `GET` | `/v1/repos` | List repos |
+| `POST` | `/v1/repos/{id}/ingest` | Queue ingest |
+| `GET` | `/v1/repos/{id}/runs` | Ingest history |
+| `GET` | `/v1/graph/stats` | Graph counts |
+| `GET` | `/v1/graph/callers_of` | Transitive callers |
+| `GET` | `/v1/graph/callees_of` | Transitive callees |
+| `GET` | `/v1/graph/imports_of` | Imports for a file |
+| `GET` | `/v1/graph/impact_radius` | Blast radius for a file |
+| `GET` | `/v1/graph/file` | Symbols in a file |
+| `GET` | `/v1/search/keyword` | Lucene FTS |
+| `GET` | `/v1/search/semantic` | Vector cosine |
+| `POST` | `/v1/mcp` | MCP JSON-RPC for IDEs |
+
+## Roadmap
+
+- [x] **Phase 1** — Foundation, auth, Python/JS/TS ingest, REST + MCP, CLI
+- [ ] **Phase 2** — Incremental updates (per-file sha diff), GraphQL endpoint, more languages (Rust, Ruby, Go, Java, C/C++)
+- [ ] **Phase 3** — LSP-backed call resolution for precise cross-file edges
+- [ ] **Phase 4** — Next.js web UI with graph viz + flow viewer
+- [ ] **Phase 5** — Multi-tenant orgs/users, k8s/Helm, OpenTelemetry, Neo4j Causal Cluster
+
+## Development
+
+```bash
+pip install -e '.[dev]'
+pytest -q
+ruff check ckg
+```
+
+Project layout:
+
+```
+ckg/
+├── api/        # FastAPI app + routes
+├── auth.py     # API tokens, principal, scopes
+├── cli/        # `ckg` Typer CLI
+├── config.py   # Pydantic settings
+├── db/         # neo4j / postgres / redis clients + schema
+├── parsers/    # tree-sitter parsers, one per language
+├── services/   # ingest, embeddings
+└── worker/     # Celery app + tasks
+docker/         # API + worker Dockerfiles
+docs/           # ADRs, deployment, API
+integrations/   # cursor / vscode / claude-code MCP snippets
+tests/          # pytest
+```
+
+## Security
+
+- API tokens are 32-byte URL-safe random strings prefixed `ckg_`, **never**
+  stored in plaintext — only argon2id hashes are persisted.
+- The bootstrap token (`.env`) is your **only** way in on day 0; rotate it
+  immediately after minting a scoped token.
+- All non-health endpoints require a token; CORS is restricted to
+  `CKG_CORS_ORIGINS`.
+- `.env` is git-ignored. Do not commit it. Do not paste tokens into chats.
+
+If you find a security issue, please open a private vulnerability report on
+GitHub.
+
+### Pre-commit credential audit
+
+A small audit script refuses to commit credentials, IDE-assistant configs
+(`.claude/`, `CLAUDE.md`, `.mcp.json`, `.cursor/`, `.continue/`, `.aider*`,
+`.windsurf/`), or files matching common secret patterns (GitHub PAT,
+OpenAI key, AWS access key, Slack token, JWT, PEM private key):
+
+```bash
+./scripts/audit-secrets.sh
+
+# install as a git pre-commit hook (recommended):
+ln -sf ../../scripts/audit-secrets.sh .git/hooks/pre-commit
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

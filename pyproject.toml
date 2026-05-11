@@ -1,0 +1,95 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ckg"
+version = "0.1.0"
+description = "Central code knowledge graph — Neo4j-backed structural index of multi-repo codebases for AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Ankur" }]
+keywords = ["knowledge-graph", "code-review", "neo4j", "tree-sitter", "mcp", "ai-agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+]
+
+dependencies = [
+    # API
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "python-multipart>=0.0.12",
+
+    # Auth
+    "argon2-cffi>=23.1",
+    "pyjwt>=2.9",
+
+    # Storage
+    "neo4j>=5.24",
+    "psycopg[binary,pool]>=3.2",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.13",
+    "redis>=5.2",
+
+    # Workers
+    "celery[redis]>=5.4",
+
+    # Parsing
+    "tree-sitter>=0.23",
+    "tree-sitter-language-pack>=0.4",
+    "gitpython>=3.1",
+
+    # Embeddings (lazy-imported in code)
+    "sentence-transformers>=3.3",
+    "numpy>=1.26",
+
+    # CLI / HTTP
+    "typer>=0.13",
+    "httpx>=0.28",
+    "rich>=13.9",
+
+    # Observability
+    "structlog>=24.4",
+    "prometheus-client>=0.21",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "httpx>=0.28",
+]
+
+[project.scripts]
+ckg = "ckg.cli.main:app"
+
+[project.urls]
+Homepage = "https://github.com/ajankurjain/central-code-knowledge-graph"
+Issues = "https://github.com/ajankurjain/central-code-knowledge-graph/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ckg*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"

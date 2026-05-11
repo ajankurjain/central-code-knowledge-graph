@@ -1,0 +1,1 @@
+"""ckg CLI package."""

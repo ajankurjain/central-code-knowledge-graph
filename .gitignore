@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+credentials.json
+credentials*.json
+service-account*.json
+*.token
+secrets/
+.secrets/
+
+# Claude Code / Cursor / IDE assistant configs (often contain MCP tokens)
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.claude.json
+.claude.local.json
+claude_desktop_config.json
+settings.local.json
+.mcp.json
+mcp.json
+.cursor/
+.cursorrules
+.cursorignore
+.vscode/mcp.json
+.continue/
+.aider*
+.windsurf/
+
+# Editors
+.vscode/
+!.vscode/launch.json.example
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ckg CLI local state
+.ckg/
+
+# Local data (Docker volumes mounted into ./data)
+data/
+logs/
+*.log
+
+# Local caches
+.cache/
+.ckg/
+
+# tree-sitter compiled grammars (regenerated on build)
+build/
+tree-sitter-*.so
