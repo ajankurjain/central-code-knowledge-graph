@@ -3,6 +3,7 @@
 
 import { getToken } from "./auth";
 import type {
+  ArchitectureMap,
   CallersResp,
   FileOverview,
   IngestRun,
@@ -11,6 +12,7 @@ import type {
   Source,
   SourceRepo,
   Stats,
+  Warning,
 } from "./types";
 
 const BASE = (process.env.NEXT_PUBLIC_CKG_API || "http://localhost:8080").replace(/\/+$/, "");
@@ -113,6 +115,18 @@ export const api = {
     ),
   deleteSource: (id: number) =>
     req<{ deleted_source_id: number; repos_dropped: string[] }>(`/v1/sources/${id}`, { method: "DELETE" }),
+
+  computeArchitecture: (repoId: string) =>
+    req<{ status: string; repo_id: string }>(
+      `/v1/repos/${encodeURIComponent(repoId)}/architecture`,
+      { method: "POST" },
+    ),
+  architecture: (repoId: string) =>
+    req<ArchitectureMap>(`/v1/repos/${encodeURIComponent(repoId)}/architecture`),
+  architectureWarnings: (repoId: string, severity?: "high" | "medium" | "low") =>
+    req<{ repo_id: string; warnings: Warning[] }>(
+      `/v1/repos/${encodeURIComponent(repoId)}/architecture/warnings${qs({ severity })}`,
+    ),
 };
 
 export { ApiError, BASE as API_BASE };

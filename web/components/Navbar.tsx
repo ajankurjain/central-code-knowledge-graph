@@ -10,6 +10,7 @@ const items = [
   { href: "/sources", label: "Sources" },
   { href: "/search", label: "Search" },
   { href: "/graph", label: "Graph" },
+  { href: "/arch", label: "Architecture" },
 ];
 
 export function Navbar() {
