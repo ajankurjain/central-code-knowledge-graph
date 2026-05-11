@@ -65,6 +65,36 @@ Scopes:
   `tools/call`. See [../integrations/cursor/README.md](../integrations/cursor/README.md)
   for the tool catalogue.
 
+### GraphQL
+
+- `POST /v1/graphql` — Strawberry GraphQL endpoint. Same bearer-token auth
+  as the REST surface. Open the URL in a browser for the GraphiQL UI.
+
+Example query:
+
+```graphql
+query {
+  stats { nodes edges repos files }
+  callersOf(repoId: "my-repo", qualifiedName: "my.module.foo", depth: 2) {
+    qualifiedName
+    filePath
+    line
+  }
+  searchSemantic(q: "where do we parse Tree-sitter trees", limit: 5) {
+    qualifiedName
+    score
+  }
+}
+```
+
+Curl:
+
+```bash
+curl -sX POST -H "$H" -H 'content-type: application/json' \
+  -d '{"query":"{ stats { nodes edges repos files } }"}' \
+  http://localhost:8080/v1/graphql
+```
+
 ## Quick curl recipes
 
 ```bash

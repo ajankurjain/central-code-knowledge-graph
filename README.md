@@ -21,10 +21,12 @@ One server that:
 |---|---|
 | Rock-solid, won't fall over | Stateless API + workers; Neo4j/Postgres/Redis run with healthchecks + `restart: unless-stopped`; horizontal scale via `--scale worker=N` |
 | Fast relationship search for AI agents | Native graph DB (Cypher) + Lucene FTS + vector index — all in Neo4j |
-| Multi-language | Tree-sitter via `tree-sitter-language-pack`: Python + JS/TS today, Rust/Ruby/Go/Java/C++ pluggable (one file under `ckg/parsers/`) |
+| Multi-language | Tree-sitter: **Python, JS/TS, Rust, Go, Java, Ruby**. Pluggable — one file under `ckg/parsers/` adds another language |
+| Fast updates | **Incremental ingest** (`--incremental`): sha-diffs files against the graph, only re-parses what changed. Full reparse stays available as `--full` |
 | Context for AI tools | Built-in MCP HTTP server → Cursor, VS Code, Claude Code drop in |
+| Two query surfaces | REST (`/v1/*`) for simple calls + **GraphQL** (`/v1/graphql`) for composed traversals; both use the same API token |
 | CLI for automation | `ckg` Typer CLI: register, ingest, query, search |
-| Spec-driven | Auto-generated OpenAPI at `/docs`; ADRs under `docs/adr/`; contract-first |
+| Spec-driven | Auto-generated OpenAPI at `/docs`; GraphiQL UI at `/v1/graphql`; ADRs under `docs/adr/` |
 | Whole-codebase index | One Neo4j graph spans all registered repos |
 | Neo4j-backed | Functions, classes, files, imports, calls all stored as labeled nodes + typed relationships |
 | Secure | API tokens with scopes (`admin`, `repo:write`, `repo:read`); hashed at rest |
@@ -171,12 +173,13 @@ Full reference: [docs/api.md](docs/api.md).
 | `GET` | `/v1/search/keyword` | Lucene FTS |
 | `GET` | `/v1/search/semantic` | Vector cosine |
 | `POST` | `/v1/mcp` | MCP JSON-RPC for IDEs |
+| `POST` | `/v1/graphql` | GraphQL endpoint (open in browser for GraphiQL UI) |
 
 ## Roadmap
 
 - [x] **Phase 1** — Foundation, auth, Python/JS/TS ingest, REST + MCP, CLI
-- [ ] **Phase 2** — Incremental updates (per-file sha diff), GraphQL endpoint, more languages (Rust, Ruby, Go, Java, C/C++)
-- [ ] **Phase 3** — LSP-backed call resolution for precise cross-file edges
+- [x] **Phase 2** — Incremental updates (per-file sha diff), GraphQL endpoint, Rust/Go/Java/Ruby parsers
+- [ ] **Phase 3** — LSP-backed call resolution for precise cross-file edges; C/C++ parser
 - [ ] **Phase 4** — Next.js web UI with graph viz + flow viewer
 - [ ] **Phase 5** — Multi-tenant orgs/users, k8s/Helm, OpenTelemetry, Neo4j Causal Cluster
 
