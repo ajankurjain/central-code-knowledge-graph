@@ -132,12 +132,46 @@ ckg search semantic "where do we parse Tree-sitter trees?"
 ckg graph callers my-repo my.module.foo --depth 2
 ```
 
+### 5b. Or pull an entire org / group / workspace at once
+
+Paste a single URL — GitHub org/user, GitLab group/user, Bitbucket
+workspace, or a JSON/YAML manifest — and ckg discovers every accessible
+repo, registers them, and queues a full ingest for each.
+
+```bash
+# Public org, anonymous
+ckg source add https://github.com/orgs/anthropics
+
+# Private org with a Personal Access Token (example: read from env)
+export CKG_SOURCE_TOKEN="$GH_PAT"
+ckg source add https://github.com/orgs/acme --include-forks
+
+# GitLab group (incl. subgroups)
+ckg source add https://gitlab.com/groups/gitlab-org
+
+# Bitbucket workspace (token format: "username:app-password")
+ckg source add https://bitbucket.org/atlassian --token "$BB_USER:$BB_APP_PASSWORD"
+
+# Manifest URL (JSON or YAML list)
+ckg source add https://example.com/all-repos.yaml
+
+ckg source list          # see what you've added
+ckg source repos 1       # repos discovered for source 1
+ckg source sync 1        # re-discover; queues ingests for newly-added repos
+ckg source delete 1 --yes  # CASCADE — drops every repo + graph data this source created
+```
+
+PATs are encrypted at rest with Fernet (key in `CKG_SECRET_KEY`). They
+never appear in `repos.url` — the worker injects them into the clone
+URL at fetch time.
+
 ### 6. Browse it in the UI
 
 Open <http://localhost:3000>, paste an API token, and explore:
 
 - **Dashboard** — node/edge/repo/file counts; repo list
 - **Repos** — register repos, queue incremental or full ingests, watch run status
+- **Sources** — paste a GitHub org / GitLab group / Bitbucket workspace / manifest URL and bulk-add every repo it exposes
 - **Search** — keyword (Lucene FTS) or semantic (vector) across all (or one) repos
 - **Graph** — force-directed call graph for any function, callers + callees up to depth 4
 

@@ -50,6 +50,11 @@ class Repo(Base):
     languages: Mapped[str | None] = mapped_column(String(500), nullable=True)  # csv
     last_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_indexed_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Foreign key to the bulk_sources table when this repo was discovered via a
+    # source URL; nullable when the repo was registered directly.
+    source_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("bulk_sources.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     runs: Mapped[list["IngestRun"]] = relationship(back_populates="repo")
@@ -68,6 +73,60 @@ class IngestRun(Base):
     error: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
     repo: Mapped[Repo] = relationship(back_populates="runs")
+
+
+class BulkSource(Base):
+    """A registered upstream that we bulk-discover repos from.
+
+    `kind` is one of: github_org, github_user, gitlab_group, gitlab_user,
+    bitbucket_workspace, manifest. The combination (kind, name) identifies
+    the upstream — `name` is the org / group / user / workspace handle, or
+    the manifest URL for kind=manifest.
+
+    `auth_secret` is a Fernet-encrypted token (see ckg/secrets.py) or empty
+    for anonymous access. We never log it.
+    """
+
+    __tablename__ = "bulk_sources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(40))
+    name: Mapped[str] = mapped_column(String(255))
+    url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    auth_secret: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    slug_template: Mapped[str] = mapped_column(String(255), default="{owner}-{name}")
+    include_private: Mapped[bool] = mapped_column(Boolean, default=True)
+    include_forks: Mapped[bool] = mapped_column(Boolean, default=False)
+    include_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    default_branch_override: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_sync_stats: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SourceRepo(Base):
+    """The link between a bulk source and a registered Repo.
+
+    One bulk_source produces 0..N source_repos; each source_repo owns
+    exactly one Repo row (cascade on source delete).
+    """
+
+    __tablename__ = "source_repos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("bulk_sources.id", ondelete="CASCADE"), index=True
+    )
+    repo_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("repos.id", ondelete="CASCADE"), index=True
+    )
+    external_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    full_name: Mapped[str] = mapped_column(String(500))
+    default_branch: Mapped[str] = mapped_column(String(120))
+    private: Mapped[bool] = mapped_column(Boolean, default=False)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    fork: Mapped[bool] = mapped_column(Boolean, default=False)
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AuditLog(Base):

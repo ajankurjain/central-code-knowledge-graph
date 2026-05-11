@@ -92,7 +92,18 @@ def ingest_repo(
 ) -> IngestStats:
     init_neo_schema()
     workdir.parent.mkdir(parents=True, exist_ok=True)
-    local_path = _checkout(url=url, branch=branch, dest=workdir)
+    # If the repo was discovered via a bulk source, swap in a clone URL with
+    # the source's PAT baked in. Falls back to the bare URL on any error.
+    effective_url = url
+    try:
+        from ckg.services.sources import credentialed_clone_url_for_repo
+
+        creds_url = credentialed_clone_url_for_repo(repo_id)
+        if creds_url:
+            effective_url = creds_url
+    except Exception as exc:  # noqa: BLE001
+        log.warning("source_auth_lookup_failed", repo_id=repo_id, error=str(exc))
+    local_path = _checkout(url=effective_url, branch=branch, dest=workdir)
     head_sha = _git_head(local_path)
     log.info("ingest_checkout_done", repo_id=repo_id, mode=mode, path=str(local_path), head=head_sha)
 

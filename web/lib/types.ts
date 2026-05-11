@@ -51,6 +51,31 @@ export type SearchHit = {
 
 export type SearchResp = { query: string; results: SearchHit[] };
 
+export type Source = {
+  id: number;
+  kind: string;
+  name: string;
+  url: string | null;
+  include_private: boolean;
+  include_forks: boolean;
+  include_archived: boolean;
+  slug_template: string;
+  default_branch_override: string | null;
+  last_synced_at: string | null;
+  last_sync_stats: Record<string, unknown> | null;
+  has_token: boolean;
+  repos: number;
+};
+
+export type SourceRepo = {
+  repo_id: string;
+  full_name: string;
+  default_branch: string;
+  private: boolean;
+  archived: boolean;
+  fork: boolean;
+};
+
 export type FileOverview = {
   repo_id: string;
   path: string;

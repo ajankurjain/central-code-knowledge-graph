@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any  # noqa: F401  (used in command bodies below)
 
 import httpx
 import typer
@@ -28,11 +28,16 @@ repo_app = typer.Typer(no_args_is_help=True, help="Manage repositories.")
 token_app = typer.Typer(no_args_is_help=True, help="Manage API tokens (admin scope required).")
 graph_app = typer.Typer(no_args_is_help=True, help="Query the graph.")
 search_app = typer.Typer(no_args_is_help=True, help="Search the graph.")
+source_app = typer.Typer(
+    no_args_is_help=True,
+    help="Bulk-source ingest — paste a URL, pull every accessible repo.",
+)
 
 app.add_typer(repo_app, name="repo")
 app.add_typer(token_app, name="token")
 app.add_typer(graph_app, name="graph")
 app.add_typer(search_app, name="search")
+app.add_typer(source_app, name="source")
 
 console = Console()
 
@@ -270,6 +275,103 @@ def graph_impact(repo_id: str, path: str, depth: int = 2) -> None:
 def graph_file(repo_id: str, path: str) -> None:
     with _client() as c:
         r = c.get("/v1/graph/file", params={"repo_id": repo_id, "path": path})
+        r.raise_for_status()
+        _print(r.json())
+
+
+# ── sources ─────────────────────────────────────────────────────────────────
+
+
+@source_app.command("add")
+def source_add(
+    url: str = typer.Argument(..., help="GitHub org/user, GitLab group/user, Bitbucket workspace, or manifest URL."),
+    token: str = typer.Option("", "--token", "-t", help="PAT for private repos (read from CKG_SOURCE_TOKEN env if omitted)."),
+    include_forks: bool = typer.Option(False, "--include-forks"),
+    include_archived: bool = typer.Option(False, "--include-archived"),
+    no_private: bool = typer.Option(False, "--no-private", help="Skip private repos even when the token allows them."),
+    branch: str = typer.Option("", "--branch", help="Override the default branch for every discovered repo."),
+    slug_template: str = typer.Option("{owner}-{name}", "--slug-template"),
+    sync_now: bool = typer.Option(True, "--sync/--no-sync", help="Run discovery + ingest queueing immediately."),
+) -> None:
+    tok = token or os.environ.get("CKG_SOURCE_TOKEN") or ""
+    body: dict[str, Any] = {
+        "url": url,
+        "token": tok or None,
+        "include_private": not no_private,
+        "include_forks": include_forks,
+        "include_archived": include_archived,
+        "default_branch_override": branch or None,
+        "slug_template": slug_template,
+        "sync_now": sync_now,
+    }
+    with _client() as c:
+        r = c.post("/v1/sources", json=body)
+        r.raise_for_status()
+        _print(r.json())
+
+
+@source_app.command("list")
+def source_list() -> None:
+    with _client() as c:
+        r = c.get("/v1/sources")
+        r.raise_for_status()
+        rows = r.json()
+    if not rows:
+        console.print("(no sources)")
+        return
+    table = Table("id", "kind", "name", "repos", "private", "last synced")
+    for row in rows:
+        stats = row.get("last_sync_stats") or {}
+        table.add_row(
+            str(row["id"]), row["kind"], row["name"], str(row.get("repos", "—")),
+            "✓" if row.get("has_token") else "—",
+            row.get("last_synced_at") or "—",
+        )
+    console.print(table)
+
+
+@source_app.command("sync")
+def source_sync(source_id: int) -> None:
+    """Re-discover and queue ingests for new/changed repos."""
+    with _client() as c:
+        r = c.post(f"/v1/sources/{source_id}/sync")
+        r.raise_for_status()
+        _print(r.json())
+
+
+@source_app.command("repos")
+def source_repos(source_id: int) -> None:
+    with _client() as c:
+        r = c.get(f"/v1/sources/{source_id}/repos")
+        r.raise_for_status()
+        rows = r.json()
+    if not rows:
+        console.print("(no repos linked yet — run `ckg source sync`)")
+        return
+    table = Table("slug", "full name", "branch", "private", "archived", "fork")
+    for row in rows:
+        table.add_row(
+            row["repo_id"], row["full_name"], row["default_branch"],
+            "✓" if row["private"] else "—",
+            "✓" if row["archived"] else "—",
+            "✓" if row["fork"] else "—",
+        )
+    console.print(table)
+
+
+@source_app.command("delete")
+def source_delete(
+    source_id: int,
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Delete a source AND every repo it created (+ their graph data)."""
+    if not yes:
+        typer.confirm(
+            f"delete source {source_id} AND every repo it created (+ Neo4j sub-graphs)?",
+            abort=True,
+        )
+    with _client() as c:
+        r = c.delete(f"/v1/sources/{source_id}")
         r.raise_for_status()
         _print(r.json())
 

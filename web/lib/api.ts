@@ -8,6 +8,8 @@ import type {
   IngestRun,
   Repo,
   SearchResp,
+  Source,
+  SourceRepo,
   Stats,
 } from "./types";
 
@@ -82,6 +84,31 @@ export const api = {
     req<SearchResp>(`/v1/search/keyword${qs({ q, repo_id: repoId, limit })}`),
   semantic: (q: string, repoId?: string, limit = 10) =>
     req<SearchResp>(`/v1/search/semantic${qs({ q, repo_id: repoId, limit })}`),
+
+  sources: () => req<Source[]>("/v1/sources"),
+  source: (id: number) => req<Source>(`/v1/sources/${id}`),
+  sourceRepos: (id: number) => req<SourceRepo[]>(`/v1/sources/${id}/repos`),
+  createSource: (body: {
+    url: string;
+    token?: string;
+    include_private?: boolean;
+    include_forks?: boolean;
+    include_archived?: boolean;
+    default_branch_override?: string;
+    slug_template?: string;
+    sync_now?: boolean;
+  }) =>
+    req<Source>("/v1/sources", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  syncSource: (id: number) =>
+    req<{ discovered: number; added: number; already: number; skipped: number; queued: number; errors: string[] }>(
+      `/v1/sources/${id}/sync`,
+      { method: "POST" },
+    ),
+  deleteSource: (id: number) =>
+    req<{ deleted_source_id: number; repos_dropped: string[] }>(`/v1/sources/${id}`, { method: "DELETE" }),
 };
 
 export { ApiError, BASE as API_BASE };

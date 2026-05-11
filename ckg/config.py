@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     log_level: str = Field("INFO", alias="CKG_LOG_LEVEL")
     cors_origins: str = Field("http://localhost:3000,http://localhost:8080", alias="CKG_CORS_ORIGINS")
     bootstrap_token: str = Field(..., alias="CKG_BOOTSTRAP_TOKEN")
+    secret_key: str = Field(..., alias="CKG_SECRET_KEY")
 
     # Neo4j
     neo4j_uri: str = Field("bolt://neo4j:7687", alias="NEO4J_URI")
