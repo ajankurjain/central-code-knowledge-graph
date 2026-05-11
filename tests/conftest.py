@@ -19,11 +19,9 @@ import pytest
 os.environ["CKG_BOOTSTRAP_TOKEN"] = "test-bootstrap-token"
 os.environ["NEO4J_PASSWORD"] = "test-neo4j-password"
 os.environ["POSTGRES_PASSWORD"] = "test-postgres-password"
-# Valid Fernet key (32-byte url-safe base64) for tests that exercise the
-# secrets module without going through tests/test_secrets.py's own setup.
-os.environ.setdefault(
-    "CKG_SECRET_KEY", "Y2lmZXJuZXRfa2V5X3BsZWFzZV9yb3RhdGVfMzJfYnl0ZXM="
-)
+# CKG_SECRET_KEY is intentionally NOT set here. Tests that need it provide
+# their own (see tests/test_secrets.py which generates a fresh Fernet key
+# per test). CI exports a placeholder via the workflow env block.
 
 
 def _parser_stack_works() -> bool:
