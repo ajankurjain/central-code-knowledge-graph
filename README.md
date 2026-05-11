@@ -21,7 +21,8 @@ One server that:
 |---|---|
 | Rock-solid, won't fall over | Stateless API + workers; Neo4j/Postgres/Redis run with healthchecks + `restart: unless-stopped`; horizontal scale via `--scale worker=N` |
 | Fast relationship search for AI agents | Native graph DB (Cypher) + Lucene FTS + vector index — all in Neo4j |
-| Multi-language | Tree-sitter: **Python, JS/TS, Rust, Go, Java, Ruby**. Pluggable — one file under `ckg/parsers/` adds another language |
+| Multi-language | Tree-sitter: **Python, JS/TS, Rust, Go, Java, Ruby, C, C++**. Pluggable — one file under `ckg/parsers/` adds another language |
+| Precise cross-file edges | **Opt-in LSP pass** (`CKG_LSP_ENABLED=true`) upgrades CALLS edges with language-server-resolved targets. Pyright today; rust-analyzer / gopls / ts-server / jdtls planned. Graph stays functional with no LSP installed |
 | Fast updates | **Incremental ingest** (`--incremental`): sha-diffs files against the graph, only re-parses what changed. Full reparse stays available as `--full` |
 | Context for AI tools | Built-in MCP HTTP server → Cursor, VS Code, Claude Code drop in |
 | Two query surfaces | REST (`/v1/*`) for simple calls + **GraphQL** (`/v1/graphql`) for composed traversals; both use the same API token |
@@ -179,7 +180,7 @@ Full reference: [docs/api.md](docs/api.md).
 
 - [x] **Phase 1** — Foundation, auth, Python/JS/TS ingest, REST + MCP, CLI
 - [x] **Phase 2** — Incremental updates (per-file sha diff), GraphQL endpoint, Rust/Go/Java/Ruby parsers
-- [ ] **Phase 3** — LSP-backed call resolution for precise cross-file edges; C/C++ parser
+- [x] **Phase 3** — C/C++ parsers; opt-in LSP precision pass (pyright today; rust-analyzer / gopls / ts-server / jdtls planned)
 - [ ] **Phase 4** — Next.js web UI with graph viz + flow viewer
 - [ ] **Phase 5** — Multi-tenant orgs/users, k8s/Helm, OpenTelemetry, Neo4j Causal Cluster
 

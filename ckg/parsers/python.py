@@ -159,7 +159,8 @@ def _collect_calls(body, source: bytes, caller_qname: str, result: ParseResult) 
                     result.calls.append(CallEdge(
                         caller_qname=caller_qname,
                         callee_name=callee,
-                        line=n.start_point[0] + 1,
+                        line=fn_node.start_point[0] + 1,
+                        character=fn_node.start_point[1],
                     ))
         for i in range(n.child_count - 1, -1, -1):
             stack.append(n.children[i])

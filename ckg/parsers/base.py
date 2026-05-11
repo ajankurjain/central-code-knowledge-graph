@@ -41,7 +41,8 @@ class ImportEdge:
 class CallEdge:
     caller_qname: str     # qualified_name of the calling function
     callee_name: str      # raw name as written at the call site
-    line: int
+    line: int             # 1-based
+    character: int = 0    # 0-based column of the callee identifier — used by the LSP pass
 
 
 @dataclass

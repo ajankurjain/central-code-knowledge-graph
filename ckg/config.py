@@ -52,6 +52,10 @@ class Settings(BaseSettings):
         alias="CKG_ENABLED_LANGUAGES",
     )
 
+    # LSP precision pass (opt-in)
+    lsp_enabled: bool = Field(False, alias="CKG_LSP_ENABLED")
+    lsp_adapters: str = Field("", alias="CKG_LSP_ADAPTERS")  # csv of languages; empty = all available
+
     @property
     def postgres_dsn(self) -> str:
         return (

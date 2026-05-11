@@ -131,6 +131,32 @@ docker compose start neo4j
 
 For Postgres: `docker compose exec postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup.sql`.
 
+### LSP precision pass (optional)
+
+When `CKG_LSP_ENABLED=true`, after each ingest the worker spawns the
+language servers listed in `CKG_LSP_ADAPTERS` (or every adapter whose
+binary is on PATH if the list is empty) and upgrades `CALLS` edges with
+precise cross-file targets.
+
+Today: **pyright** for Python.
+
+```bash
+# Install pyright on the worker (host or in the worker image):
+npm install -g pyright
+# or:
+pip install pyright
+
+# Enable in .env:
+CKG_LSP_ENABLED=true
+CKG_LSP_ADAPTERS=python      # optional; empty = all available
+
+make restart
+```
+
+Trade-off: pyright takes ~30–90 s to cold-index a medium repo. Skip this
+flag for size-sensitive workloads; the name-based resolver always runs
+and gives you usable (if imprecise) cross-file edges.
+
 ### Scaling
 
 - **More ingest throughput**: bump worker `--concurrency` (currently 2) in

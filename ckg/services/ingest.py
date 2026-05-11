@@ -103,6 +103,18 @@ def ingest_repo(
 
     stats.head_sha = head_sha
     _resolve_call_edges(repo_id)
+
+    # Optional LSP precision pass. Off by default; controlled by CKG_LSP_ENABLED.
+    # Failures here NEVER fail the ingest — the name-based edges are already in place.
+    try:
+        from ckg.services.lsp_resolve import run_lsp_pass
+
+        lsp_stats = run_lsp_pass(repo_id=repo_id, repo_root=local_path)
+        if lsp_stats and not lsp_stats.get("skipped"):
+            log.info("ingest_lsp_pass", repo_id=repo_id, **lsp_stats)
+    except Exception as exc:  # noqa: BLE001 — defensive: never fail ingest on LSP issues
+        log.warning("ingest_lsp_pass_failed", repo_id=repo_id, error=str(exc))
+
     log.info("ingest_done", repo_id=repo_id, **stats.to_dict())
     return stats
 
@@ -296,6 +308,7 @@ def _parse_and_collect(*, path, rel_path, source, sha, repo_id, lang, stats,
             "caller_qname": call.caller_qname,
             "callee_name": call.callee_name,
             "line": call.line,
+            "character": call.character,
         })
     return True
 
@@ -367,7 +380,8 @@ def _flush(file_b, cls_b, fn_b, imp_b, cs_b) -> None:
                   callee_name: row.callee_name,
                   line: row.line
                 })
-                  SET cs.file_path = row.file_path
+                  SET cs.file_path = row.file_path,
+                      cs.character = row.character
                 MERGE (caller)-[:HAS_CALL]->(cs)
             """, rows=cs_b)
             cs_b.clear()
