@@ -54,10 +54,3 @@ Tradeoffs:
   will improve.
 - A single Neo4j instance is the throughput bottleneck. Phase 5 ops work adds
   a Neo4j Causal Cluster or Aura.
-
-## Out of scope (deferred)
-
-- Web UI — Phase 5.
-- Multi-tenant org/user model — Phase 5.
-- Rust / Ruby / Go / Java parsers — Phase 4.
-- Incremental update (only changed files) — Phase 2.
