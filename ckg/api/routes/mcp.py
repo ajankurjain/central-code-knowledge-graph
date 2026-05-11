@@ -28,7 +28,9 @@ from ckg.api.routes.graph import (
 )
 from ckg.api.routes.search import keyword_search, semantic_search
 from ckg.auth import Principal, require_repo_read
+from ckg.logging import get_logger
 
+log = get_logger(__name__)
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 
 
@@ -252,7 +254,16 @@ async def jsonrpc(request: Request, principal: Principal = Depends(require_repo_
             result = _dispatch_tool(name, args, principal)
             return _ok(req.id, {"content": [{"type": "json", "json": result}]})
         except KeyError as e:
-            return _err(req.id, -32602, f"missing arg: {e}")
-        except Exception as e:
-            return _err(req.id, -32603, str(e))
-    return _err(req.id, -32601, f"method not found: {req.method}")
+            # Surface only the missing argument name (part of the public
+            # tool input-schema contract). Avoid str(e) which CodeQL flags
+            # as potential information disclosure.
+            missing = e.args[0] if e.args else "<unknown>"
+            return _err(req.id, -32602, f"missing required argument: {missing!r}")
+        except Exception:
+            # Do NOT leak the internal exception message back to the caller;
+            # an MCP client doesn't need it and surfacing internals can
+            # disclose implementation details. Log server-side instead so
+            # operators can still debug.
+            log.exception("mcp_tool_failed", tool=name)
+            return _err(req.id, -32603, "internal error executing tool")
+    return _err(req.id, -32601, "method not found")
