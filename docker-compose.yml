@@ -98,6 +98,23 @@ services:
     volumes:
       - repo_data:/var/lib/ckg/repos
 
+  beat:
+    # Celery Beat — fires periodic scan tasks (sources due for sync,
+    # repos due for poll). Only ONE beat instance should run per cluster.
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CKG_ROLE: beat
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "ckg.worker.beat:celery_app", "beat", "--loglevel=INFO"]
+
   web:
     build:
       context: .

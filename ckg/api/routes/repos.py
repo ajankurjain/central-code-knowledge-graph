@@ -32,6 +32,8 @@ class RepoOut(BaseModel):
     languages: list[str]
     last_indexed_at: datetime | None
     last_indexed_sha: str | None
+    poll_interval_seconds: int = 0
+    source_id: int | None = None
 
 
 class IngestRunOut(BaseModel):
@@ -53,6 +55,8 @@ def _repo_to_out(r: Repo) -> RepoOut:
         languages=[lang for lang in (r.languages or "").split(",") if lang],
         last_indexed_at=r.last_indexed_at,
         last_indexed_sha=r.last_indexed_sha,
+        poll_interval_seconds=r.poll_interval_seconds or 0,
+        source_id=r.source_id,
     )
 
 
@@ -151,6 +155,34 @@ def trigger_ingest(
             started_at=run.started_at, finished_at=run.finished_at,
             stats=run.stats, error=run.error,
         )
+
+
+class PollConfig(BaseModel):
+    poll_interval_seconds: int = Field(0, ge=0)
+
+
+@router.put("/{repo_id}/poll", response_model=RepoOut)
+def configure_poll(
+    repo_id: str,
+    body: PollConfig,
+    principal: Principal = Depends(require_repo_write),
+) -> RepoOut:
+    """Set per-repo polling interval. 0 disables.
+
+    Independent of any bulk-source polling — applies to manually-registered
+    repos too. Scheduler floor is 60 s."""
+    Session = get_sessionmaker()
+    with Session() as s:
+        r = s.get(Repo, repo_id)
+        if not r:
+            raise HTTPException(404, "repo not found")
+        r.poll_interval_seconds = max(0, int(body.poll_interval_seconds))
+        s.add(AuditLog(
+            actor=principal.name, action="repo.poll.set",
+            target=repo_id, detail={"poll_interval_seconds": r.poll_interval_seconds},
+        ))
+        s.commit()
+        return _repo_to_out(r)
 
 
 @router.get("/{repo_id}/runs", response_model=list[IngestRunOut])

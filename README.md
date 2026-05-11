@@ -165,6 +165,33 @@ PATs are encrypted at rest with Fernet (key in `CKG_SECRET_KEY`). They
 never appear in `repos.url` — the worker injects them into the clone
 URL at fetch time.
 
+### 5c. Keep the graph fresh — polling + webhooks
+
+Two ways to keep ingested repos up-to-date without manual triggers.
+**Polling** uses a Celery Beat scheduler (one extra Compose service);
+**webhooks** are push-driven by GitHub / GitLab / Bitbucket.
+
+```bash
+# Polling
+ckg source schedule 1 30m       # re-discover source 1 every 30 minutes
+ckg repo   poll     my-repo 5m  # incremental ingest of my-repo every 5 minutes
+
+# Webhooks (returns the secret + receiver URL — paste both into the provider)
+ckg source webhook  1 --enable
+```
+
+Provider setup:
+
+| Provider | Where | Field |
+|---|---|---|
+| GitHub | repo / org Settings → Webhooks | `Payload URL` = `<your-server>/v1/webhooks/<source_id>`; `Content type: application/json`; `Secret` = the printed value; tick **just** the `push` event |
+| GitLab | project Settings → Webhooks | `URL` = same as above; `Secret token` = the printed value; tick **Push events** |
+| Bitbucket | workspace Webhooks → Add | `URL` = `<your-server>/v1/webhooks/<source_id>?secret=<paste>`; trigger on **Repository push** |
+
+GitHub uses HMAC-SHA256 of the body, GitLab a shared-token header,
+Bitbucket Cloud the URL-embedded secret. The same `/v1/webhooks/<id>`
+endpoint detects the provider from headers automatically.
+
 ### 6. Browse it in the UI
 
 Open <http://localhost:3000>, paste an API token, and explore:

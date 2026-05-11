@@ -16,6 +16,7 @@ from ckg.api.routes import mcp as mcp_routes
 from ckg.api.routes import repos as repos_routes
 from ckg.api.routes import search as search_routes
 from ckg.api.routes import sources as sources_routes
+from ckg.api.routes import webhooks as webhooks_routes
 from ckg.config import get_settings
 from ckg.db import neo4j as neo4j_db
 from ckg.db import postgres as pg
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(search_routes.router, prefix="/v1")
     app.include_router(mcp_routes.router, prefix="/v1")
     app.include_router(graphql_routes.router, prefix="/v1")
+    app.include_router(webhooks_routes.router, prefix="/v1")
     return app
 
 

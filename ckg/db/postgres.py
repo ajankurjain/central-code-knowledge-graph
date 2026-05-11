@@ -55,6 +55,9 @@ class Repo(Base):
     source_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("bulk_sources.id", ondelete="SET NULL"), nullable=True
     )
+    # Per-repo polling: when > 0, the scheduler queues an incremental ingest
+    # this often (seconds). 0 = disabled. Min 60s enforced by scheduler.
+    poll_interval_seconds: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     runs: Mapped[list["IngestRun"]] = relationship(back_populates="repo")
@@ -101,6 +104,13 @@ class BulkSource(Base):
     default_branch_override: Mapped[str | None] = mapped_column(String(120), nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_sync_stats: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # Scheduled polling: when > 0, the scheduler re-discovers + ingests this
+    # often (seconds). 0 = disabled. Min 60s enforced by scheduler.
+    sync_interval_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    # Inbound webhook config — presence of `webhook_secret` + enabled flag
+    # opens the POST /v1/webhooks/{source_id} endpoint to push events.
+    webhook_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    webhook_secret: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

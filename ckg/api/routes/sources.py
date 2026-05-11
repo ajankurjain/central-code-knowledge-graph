@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from ckg.auth import Principal, require_admin, require_repo_read, require_repo_write
 from ckg.db.postgres import BulkSource, SourceRepo, get_sessionmaker
+from ckg.services import webhooks as wh
 from ckg.services.sources import (
     CreateSourceInput,
     SyncStats,
@@ -53,6 +54,23 @@ class SourceOut(BaseModel):
     last_sync_stats: dict | None
     has_token: bool
     repos: int
+    sync_interval_seconds: int = 0
+    webhook_enabled: bool = False
+
+
+class SourceSchedule(BaseModel):
+    sync_interval_seconds: int = Field(0, ge=0)
+
+
+class WebhookConfig(BaseModel):
+    enabled: bool = True
+    rotate_secret: bool = False
+
+
+class WebhookInfo(BaseModel):
+    enabled: bool
+    secret: str | None
+    receiver_url_template: str = "POST {origin}/v1/webhooks/{source_id}"
 
 
 class SourceRepoOut(BaseModel):
@@ -79,6 +97,8 @@ def _to_out(row: BulkSource, repo_count: int) -> SourceOut:
         last_sync_stats=row.last_sync_stats,
         has_token=bool(row.auth_secret),
         repos=repo_count,
+        sync_interval_seconds=row.sync_interval_seconds or 0,
+        webhook_enabled=bool(row.webhook_enabled and row.webhook_secret),
     )
 
 
@@ -189,3 +209,65 @@ def delete(source_id: int, principal: Principal = Depends(require_admin)) -> dic
         return delete_source(source_id, actor=principal.name)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.put("/{source_id}/schedule", response_model=SourceOut)
+def set_schedule(
+    source_id: int,
+    body: SourceSchedule,
+    _: Principal = Depends(require_repo_write),
+) -> SourceOut:
+    """Set per-source polling interval (seconds). 0 disables.
+
+    Min floor enforced by the scheduler is 60s — values below that are
+    promoted at run time."""
+    Session = get_sessionmaker()
+    with Session() as s:
+        row = s.get(BulkSource, source_id)
+        if not row:
+            raise HTTPException(404, "source not found")
+        row.sync_interval_seconds = max(0, int(body.sync_interval_seconds))
+        s.commit()
+        count = s.execute(select(SourceRepo).where(SourceRepo.source_id == source_id)).scalars().all()
+        return _to_out(row, repo_count=len(count))
+
+
+@router.put("/{source_id}/webhook", response_model=WebhookInfo)
+def configure_webhook(
+    source_id: int,
+    body: WebhookConfig,
+    _: Principal = Depends(require_repo_write),
+) -> WebhookInfo:
+    """Enable / disable / rotate the inbound webhook for this source.
+
+    Returns the plaintext secret — paste it into the upstream provider's
+    webhook config. Keep this response audience-restricted."""
+    Session = get_sessionmaker()
+    with Session() as s:
+        row = s.get(BulkSource, source_id)
+        if not row:
+            raise HTTPException(404, "source not found")
+        if body.enabled:
+            if body.rotate_secret or not row.webhook_secret:
+                row.webhook_secret = wh.new_secret()
+            row.webhook_enabled = True
+        else:
+            row.webhook_enabled = False
+        s.commit()
+        return WebhookInfo(
+            enabled=row.webhook_enabled,
+            secret=row.webhook_secret if row.webhook_enabled else None,
+        )
+
+
+@router.get("/{source_id}/webhook", response_model=WebhookInfo)
+def get_webhook(source_id: int, _: Principal = Depends(require_repo_write)) -> WebhookInfo:
+    Session = get_sessionmaker()
+    with Session() as s:
+        row = s.get(BulkSource, source_id)
+        if not row:
+            raise HTTPException(404, "source not found")
+        return WebhookInfo(
+            enabled=bool(row.webhook_enabled and row.webhook_secret),
+            secret=row.webhook_secret if row.webhook_enabled else None,
+        )

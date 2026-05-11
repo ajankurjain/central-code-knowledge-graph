@@ -232,6 +232,71 @@ def repo_delete(repo_id: str, yes: bool = typer.Option(False, "--yes", "-y")) ->
     console.print(f"[green]deleted {repo_id}[/green]")
 
 
+@repo_app.command("poll")
+def repo_poll(
+    repo_id: str,
+    every: str = typer.Argument(..., help="Polling interval (e.g. '5m', '1h', '0' to disable)."),
+) -> None:
+    """Set per-repo polling — scheduler enqueues an incremental ingest each interval."""
+    seconds = _parse_duration(every)
+    with _client() as c:
+        r = c.put(f"/v1/repos/{repo_id}/poll", json={"poll_interval_seconds": seconds})
+        r.raise_for_status()
+        _print(r.json())
+
+
+@source_app.command("schedule")
+def source_schedule(
+    source_id: int,
+    every: str = typer.Argument(..., help="Polling interval, e.g. '30m', '1h', '0' to disable."),
+) -> None:
+    """Set per-source polling. Floor enforced by the scheduler is 60s."""
+    seconds = _parse_duration(every)
+    with _client() as c:
+        r = c.put(f"/v1/sources/{source_id}/schedule", json={"sync_interval_seconds": seconds})
+        r.raise_for_status()
+        _print(r.json())
+
+
+@source_app.command("webhook")
+def source_webhook(
+    source_id: int,
+    enable: bool = typer.Option(True, "--enable/--disable"),
+    rotate: bool = typer.Option(False, "--rotate", help="Generate a fresh secret."),
+) -> None:
+    """Enable / disable / rotate the inbound webhook for this source."""
+    with _client() as c:
+        r = c.put(
+            f"/v1/sources/{source_id}/webhook",
+            json={"enabled": enable, "rotate_secret": rotate},
+        )
+        r.raise_for_status()
+        data = r.json()
+    console.print(
+        f"[bold]webhook[/bold] enabled={data['enabled']}\n"
+        f"  receiver URL: POST <your-server>/v1/webhooks/{source_id}"
+    )
+    if data.get("secret"):
+        console.print(f"  [yellow]secret[/yellow]: [bold]{data['secret']}[/bold]")
+        console.print(
+            "  Paste this into:\n"
+            "    GitHub    → repo Settings → Webhooks → Secret (content type application/json, just the `push` event)\n"
+            "    GitLab    → project Settings → Webhooks → Secret token (Push events)\n"
+            "    Bitbucket → workspace Webhooks → URL `?secret=<paste>` (Repository push)"
+        )
+
+
+def _parse_duration(s: str) -> int:
+    """Accepts '30s', '5m', '2h', '1d' or a bare integer (seconds)."""
+    s = s.strip().lower()
+    if not s:
+        return 0
+    if s[-1].isdigit():
+        return int(s)
+    n = int(s[:-1])
+    return {"s": 1, "m": 60, "h": 3600, "d": 86400}.get(s[-1], 1) * n
+
+
 # ── graph ───────────────────────────────────────────────────────────────────
 
 

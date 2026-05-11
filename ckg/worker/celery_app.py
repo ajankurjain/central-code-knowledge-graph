@@ -29,5 +29,6 @@ celery_app.conf.update(
 # Ensure task module is imported so workers know about @celery_app.task
 celery_app.autodiscover_tasks(["ckg.worker"])
 
-# Side-effect import to register task functions
+# Side-effect imports to register task functions on the workers / beat.
 from ckg.worker import tasks  # noqa: E402,F401
+from ckg.worker import scheduler  # noqa: E402,F401
