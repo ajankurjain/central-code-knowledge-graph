@@ -47,7 +47,10 @@ class Settings(BaseSettings):
     repo_root: str = Field("/var/lib/ckg/repos", alias="CKG_REPO_ROOT")
 
     # Language filter
-    enabled_languages: str = Field("python,javascript,typescript", alias="CKG_ENABLED_LANGUAGES")
+    enabled_languages: str = Field(
+        "python,javascript,typescript,rust,go,java,ruby",
+        alias="CKG_ENABLED_LANGUAGES",
+    )
 
     @property
     def postgres_dsn(self) -> str:

@@ -90,6 +90,10 @@ def _init_registry() -> None:
     # Import side effects register each parser
     from ckg.parsers import python as _py  # noqa: F401
     from ckg.parsers import javascript as _js  # noqa: F401
+    from ckg.parsers import rust as _rs  # noqa: F401
+    from ckg.parsers import go as _go  # noqa: F401
+    from ckg.parsers import java as _ja  # noqa: F401
+    from ckg.parsers import ruby as _rb  # noqa: F401
 
 
 _init_registry()
