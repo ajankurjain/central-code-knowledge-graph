@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: pytest + ruff (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install (with dev + server extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+      - name: Lint (ruff)
+        run: ruff check ckg tests
+      - name: Tests
+        env:
+          CKG_BOOTSTRAP_TOKEN: ci-bootstrap-token
+          CKG_SECRET_KEY: ci-fernet-key-please-rotate-32-bytes==
+          NEO4J_PASSWORD: ci-neo4j-password
+          POSTGRES_PASSWORD: ci-postgres-password
+        run: |
+          pytest -q --ignore=tests/integration
+
+  audit:
+    name: Credential audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Run scripts/audit-secrets.sh
+        run: ./scripts/audit-secrets.sh
