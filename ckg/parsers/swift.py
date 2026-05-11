@@ -50,7 +50,7 @@ def _walk(node, source: bytes, module_qname: str, parents: list[str], result: Pa
             )
             body = _swift_body(child)
             if body is not None:
-                _walk(body, source, module_qname, parents + [name], result)
+                _walk(body, source, module_qname, [*parents, name], result)
         elif t in _FN_TYPES:
             name = _swift_fn_name(child, source, t)
             is_method = bool(parents)
@@ -107,10 +107,7 @@ def _swift_body(node):
 
 
 def _swift_is_async(node) -> bool:
-    for c in node.children:
-        if c.type == "async":
-            return True
-    return False
+    return any(c.type == "async" for c in node.children)
 
 
 def _call_name(n, source: bytes) -> str:

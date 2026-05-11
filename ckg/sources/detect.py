@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 
-
 _PATTERNS: list[tuple[str, str, str]] = [
     # (regex, kind, group-index of the name capture (as a string for clarity))
     (r"^(?:https?://)?github\.com/orgs/([^/?#]+)/?", "github_org", "1"),

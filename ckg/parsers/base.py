@@ -88,22 +88,19 @@ def all_languages() -> list[str]:
 
 # Eager-load known parsers so the registry is populated on import
 def _init_registry() -> None:
-    # Import side effects register each parser. Wrap in try/except per language
+    # Import side effects register each parser. Wrap in contextlib.suppress
     # so a missing grammar in `tree-sitter-language-pack` only drops that
     # language, not the whole loader.
+    import contextlib
+
     for modname in (
         "python", "javascript", "rust", "go", "java", "ruby", "c", "cpp",
         "csharp", "kotlin", "scala", "swift", "php", "solidity", "dart",
         "r", "perl", "lua", "zig", "powershell", "julia", "nix",
         "vue", "svelte", "ipynb",
     ):
-        try:
+        with contextlib.suppress(Exception):
             __import__(f"ckg.parsers.{modname}")
-        except Exception:
-            # Grammar missing or parser self-test failed — skip silently.
-            # The registry simply won't list this language; ingest will
-            # treat files of that extension as unsupported.
-            pass
 
 
 _init_registry()

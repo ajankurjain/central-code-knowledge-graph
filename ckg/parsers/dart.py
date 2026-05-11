@@ -49,7 +49,7 @@ def _walk(node, source: bytes, module_qname: str, parents: list[str], result: Pa
             )
             body = child.child_by_field_name("body") or _first_body(child)
             if body is not None:
-                _walk(body, source, module_qname, parents + [name], result)
+                _walk(body, source, module_qname, [*parents, name], result)
         elif t in ("function_signature", "method_signature", "function_body", "method_declaration", "function_declaration"):
             # Tree-sitter-dart often emits separate signature + body nodes.
             # Treat the *signature* as the function definition site.

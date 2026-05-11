@@ -15,12 +15,12 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Any  # noqa: F401  (used in command bodies below)
+from typing import Any
 
 import httpx
 import typer
 from rich.console import Console
-from rich.json import JSON as RichJSON
+from rich.json import JSON as RichJSON  # noqa: N811 — `JSON` is rich's exported name
 from rich.table import Table
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="Central code knowledge graph CLI.")
@@ -401,7 +401,7 @@ def source_list() -> None:
         return
     table = Table("id", "kind", "name", "repos", "private", "last synced")
     for row in rows:
-        stats = row.get("last_sync_stats") or {}
+        row.get("last_sync_stats") or {}
         table.add_row(
             str(row["id"]), row["kind"], row["name"], str(row.get("repos", "—")),
             "✓" if row.get("has_token") else "—",
@@ -486,7 +486,7 @@ def main() -> None:
         app()
     except httpx.HTTPStatusError as exc:
         console.print(f"[red]HTTP {exc.response.status_code}[/red]: {exc.response.text}", file=sys.stderr)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
 
 # ── architecture ────────────────────────────────────────────────────────────

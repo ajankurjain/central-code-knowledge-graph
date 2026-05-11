@@ -17,7 +17,6 @@ except ImportError:  # pragma: no cover
 
 from ckg.parsers import get_parser
 
-
 SAMPLE = b'''
 """module docstring"""
 import os

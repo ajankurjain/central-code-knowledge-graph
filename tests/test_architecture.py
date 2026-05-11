@@ -8,7 +8,6 @@ the integration suite (`tests/integration/`).
 from __future__ import annotations
 
 import networkx as nx
-import pytest
 
 from ckg.services.architecture import (
     DEFAULT_FAN_IN_THRESHOLD,

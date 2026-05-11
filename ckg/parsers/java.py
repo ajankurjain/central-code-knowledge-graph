@@ -61,7 +61,7 @@ def _walk(node, source: bytes, pkg: str, parents: list[str], result: ParseResult
             ))
             body = child.child_by_field_name("body")
             if body is not None:
-                _walk(body, source, pkg, parents + [name], result)
+                _walk(body, source, pkg, [*parents, name], result)
         elif t in ("method_declaration", "constructor_declaration"):
             name_node = child.child_by_field_name("name")
             name = node_text(source, name_node) if name_node is not None else "?"

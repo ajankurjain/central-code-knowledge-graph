@@ -60,7 +60,7 @@ class Repo(Base):
     poll_interval_seconds: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    runs: Mapped[list["IngestRun"]] = relationship(back_populates="repo")
+    runs: Mapped[list[IngestRun]] = relationship(back_populates="repo")
 
 
 class IngestRun(Base):

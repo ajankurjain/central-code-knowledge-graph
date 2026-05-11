@@ -8,12 +8,9 @@ Open the GraphiQL UI at http://localhost:8080/v1/graphql in a browser.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import strawberry
 
 from ckg.db.neo4j import session as neo_session
-
 
 # ── Types ───────────────────────────────────────────────────────────────────
 
@@ -41,7 +38,7 @@ class SearchHit:
     file_path: str
     line: int
     score: float
-    kind: Optional[str] = None
+    kind: str | None = None
 
 
 @strawberry.type
@@ -56,8 +53,8 @@ class FileSymbols:
     path: str
     language: str | None
     size_bytes: int | None
-    classes: list["ClassRef"]
-    functions: list["FunctionRef2"]
+    classes: list[ClassRef]
+    functions: list[FunctionRef2]
 
 
 @strawberry.type
@@ -236,7 +233,7 @@ class Query:
     def search_keyword(
         self,
         q: str,
-        repo_id: Optional[str] = None,
+        repo_id: str | None = None,
         limit: int = 25,
     ) -> list[SearchHit]:
         where = "WHERE node.repo_id = $rid" if repo_id else ""
@@ -269,7 +266,7 @@ class Query:
     def search_semantic(
         self,
         q: str,
-        repo_id: Optional[str] = None,
+        repo_id: str | None = None,
         limit: int = 10,
     ) -> list[SearchHit]:
         from ckg.services.embeddings import embed_text  # lazy

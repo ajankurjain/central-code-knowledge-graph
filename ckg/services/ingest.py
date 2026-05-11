@@ -101,7 +101,7 @@ def ingest_repo(
         creds_url = credentialed_clone_url_for_repo(repo_id)
         if creds_url:
             effective_url = creds_url
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("source_auth_lookup_failed", repo_id=repo_id, error=str(exc))
     local_path = _checkout(url=effective_url, branch=branch, dest=workdir)
     head_sha = _git_head(local_path)
@@ -123,7 +123,7 @@ def ingest_repo(
         lsp_stats = run_lsp_pass(repo_id=repo_id, repo_root=local_path)
         if lsp_stats and not lsp_stats.get("skipped"):
             log.info("ingest_lsp_pass", repo_id=repo_id, **lsp_stats)
-    except Exception as exc:  # noqa: BLE001 — defensive: never fail ingest on LSP issues
+    except Exception as exc:
         log.warning("ingest_lsp_pass_failed", repo_id=repo_id, error=str(exc))
 
     log.info("ingest_done", repo_id=repo_id, **stats.to_dict())

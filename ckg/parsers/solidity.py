@@ -55,7 +55,7 @@ def _walk(node, source: bytes, module_qname: str, parents: list[str], result: Pa
             )
             body = child.child_by_field_name("body")
             if body is not None:
-                _walk(body, source, module_qname, parents + [name], result)
+                _walk(body, source, module_qname, [*parents, name], result)
         elif t in ("function_definition", "modifier_definition", "constructor_definition", "fallback_receive_definition", "receive_definition"):
             name = field_text(child, source, "name") or {"constructor_definition": "constructor", "receive_definition": "receive", "fallback_receive_definition": "fallback"}.get(t, "?")
             is_method = bool(parents)

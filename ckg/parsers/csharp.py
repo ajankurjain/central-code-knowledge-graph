@@ -64,7 +64,7 @@ def _walk(node, source: bytes, ns: str, parents: list[str], result: ParseResult)
             )
             body = child.child_by_field_name("body")
             if body is not None:
-                _walk(body, source, ns, parents + [name], result)
+                _walk(body, source, ns, [*parents, name], result)
             # We already wrote the class node; suppress fallthrough.
             continue
         elif t in ("method_declaration", "constructor_declaration", "destructor_declaration", "operator_declaration", "local_function_statement"):

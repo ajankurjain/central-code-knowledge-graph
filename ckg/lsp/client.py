@@ -12,6 +12,7 @@ Spec: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 import threading
@@ -30,7 +31,7 @@ log = get_logger(__name__)
 @dataclass
 class _Pending:
     method: str
-    q: "Queue[dict]"
+    q: Queue[dict]
 
 
 class LspClient:
@@ -80,19 +81,15 @@ class LspClient:
         return _parse_locations(result, repo_root=self.repo_root)
 
     def close(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._request("shutdown", None, timeout=2.0)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
+        with contextlib.suppress(Exception):
             self._notify("exit", None)
-        except Exception:  # noqa: BLE001
-            pass
         self._stop.set()
         try:
             self._proc.terminate()
             self._proc.wait(timeout=3.0)
-        except Exception:  # noqa: BLE001
+        except Exception:
             self._proc.kill()
 
     # ── Internals ───────────────────────────────────────────────────────────
@@ -123,7 +120,7 @@ class LspClient:
 
     def _request(self, method: str, params: Any, timeout: float | None = None) -> Any:
         rid = self._next_request_id()
-        q: "Queue[dict]" = Queue(maxsize=1)
+        q: Queue[dict] = Queue(maxsize=1)
         self._pending[rid] = _Pending(method=method, q=q)
         self._write({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
         try:

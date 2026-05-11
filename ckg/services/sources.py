@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -171,7 +171,7 @@ def sync_source(source_id: int, actor: str = "system") -> SyncStats:
         with Session() as s:
             source = s.get(BulkSource, source_id)
             if source is not None:
-                source.last_synced_at = datetime.now(timezone.utc)
+                source.last_synced_at = datetime.now(UTC)
                 source.last_sync_stats = stats.to_dict()
                 s.commit()
 

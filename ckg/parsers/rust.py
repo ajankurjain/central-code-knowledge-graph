@@ -57,7 +57,7 @@ def _walk(node, source: bytes, module_qname: str, parents: list[str], result: Pa
             ty = node_text(source, ty_node) if ty_node is not None else "?"
             body = child.child_by_field_name("body")
             if body is not None:
-                _walk(body, source, module_qname, parents + [ty], result)
+                _walk(body, source, module_qname, [*parents, ty], result)
         elif t == "function_item":
             name = _ident(child.child_by_field_name("name"), source)
             qname = "::".join([module_qname, *parents, name])
@@ -81,7 +81,7 @@ def _walk(node, source: bytes, module_qname: str, parents: list[str], result: Pa
             name = _ident(child.child_by_field_name("name"), source)
             body = child.child_by_field_name("body")
             if body is not None and name:
-                _walk(body, source, module_qname, parents + [name], result)
+                _walk(body, source, module_qname, [*parents, name], result)
         else:
             _walk(child, source, module_qname, parents, result)
 
@@ -117,10 +117,10 @@ def _imports(node, source: bytes) -> list[ImportEdge]:
 
     def walk(n, prefix: list[str]) -> None:
         if n.type == "identifier":
-            add_path("::".join(prefix + [node_text(source, n)]))
+            add_path("::".join([*prefix, node_text(source, n)]))
         elif n.type == "scoped_identifier":
             txt = node_text(source, n)
-            add_path("::".join(prefix + [txt]))
+            add_path("::".join([*prefix, txt]))
         elif n.type == "use_as_clause":
             inner = n.child_by_field_name("path")
             alias_node = n.child_by_field_name("alias")

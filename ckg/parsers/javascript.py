@@ -72,7 +72,7 @@ def _walk(node, source: bytes, module_qname: str, parents: list[str], result: Pa
             ))
             body = child.child_by_field_name("body")
             if body is not None:
-                _walk(body, source, module_qname, parents + [name], result)
+                _walk(body, source, module_qname, [*parents, name], result)
         elif t in ("function_declaration", "method_definition", "arrow_function", "function_expression"):
             name_node = child.child_by_field_name("name")
             name = node_text(source, name_node) if name_node is not None else "<anon>"
@@ -98,10 +98,7 @@ def _walk(node, source: bytes, module_qname: str, parents: list[str], result: Pa
 
 
 def _is_async(node, source: bytes) -> bool:
-    for c in node.children:
-        if c.type == "async":
-            return True
-    return False
+    return any(c.type == "async" for c in node.children)
 
 
 def _import_source(node, source: bytes) -> str:

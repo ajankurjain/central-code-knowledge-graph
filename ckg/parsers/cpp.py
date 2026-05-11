@@ -73,7 +73,7 @@ def _walk(node, source: bytes, module_qname: str, parents: list[str], result: Pa
             ))
             body = child.child_by_field_name("body")
             if body is not None:
-                _walk(body, source, module_qname, parents + [name], result)
+                _walk(body, source, module_qname, [*parents, name], result)
         elif t == "function_definition":
             _emit_function(child, source, module_qname, parents, result)
         elif t == "template_declaration":

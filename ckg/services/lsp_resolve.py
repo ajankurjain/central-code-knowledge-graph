@@ -8,7 +8,7 @@ resolve keep the name-match fallback.
 
 Off by default — gated by `CKG_LSP_ENABLED=true`.
 
-Performance note: LSPs are slow on cold start (pyright takes 30–90s to
+Performance note: LSPs are slow on cold start (pyright takes 30-90s to
 index a medium repo). For large repos this pass can easily 10x the ingest
 time. Run it asynchronously or skip it for size-sensitive workloads.
 """

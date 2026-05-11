@@ -30,5 +30,9 @@ celery_app.conf.update(
 celery_app.autodiscover_tasks(["ckg.worker"])
 
 # Side-effect imports to register task functions on the workers / beat.
-from ckg.worker import tasks  # noqa: E402,F401
-from ckg.worker import scheduler  # noqa: E402,F401
+# Must come AFTER `celery_app` is constructed above; ruff E402 is suppressed
+# here on purpose.
+from ckg.worker import (  # noqa: E402
+    scheduler,  # noqa: F401
+    tasks,  # noqa: F401
+)

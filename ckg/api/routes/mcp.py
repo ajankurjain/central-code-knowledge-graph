@@ -17,7 +17,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from ckg.auth import Principal, require_repo_read
 from ckg.api.routes.graph import (
     blast_radius,
     callees_of,
@@ -28,6 +27,7 @@ from ckg.api.routes.graph import (
     imports_of,
 )
 from ckg.api.routes.search import keyword_search, semantic_search
+from ckg.auth import Principal, require_repo_read
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 

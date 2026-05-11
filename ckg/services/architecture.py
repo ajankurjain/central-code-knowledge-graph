@@ -20,11 +20,10 @@ counts are upper bounds. Turn on `CKG_LSP_ENABLED` to tighten.
 
 from __future__ import annotations
 
-import math
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import networkx as nx
 from networkx.algorithms.community import louvain_communities
@@ -75,7 +74,7 @@ def compute_architecture(repo_id: str) -> ArchStats:
         _wipe(repo_id)
         return ArchStats(
             repo_id=repo_id,
-            computed_at=datetime.now(timezone.utc).isoformat(),
+            computed_at=datetime.now(UTC).isoformat(),
         )
 
     # 1. Build the graphs we need.
@@ -156,7 +155,7 @@ def compute_architecture(repo_id: str) -> ArchStats:
     )
 
     # 6. Persist.
-    computed_at = datetime.now(timezone.utc).isoformat()
+    computed_at = datetime.now(UTC).isoformat()
     _wipe(repo_id)
     _write_clusters(repo_id, clusters, cluster_metrics, cluster_edges, computed_at)
     _write_warnings(repo_id, warnings, computed_at)
@@ -555,6 +554,3 @@ def list_warnings(repo_id: str, severity: str | None = None) -> list[dict]:
         params["sev"] = severity
     with neo_session() as s:
         return s.run(cy, **params).data()
-
-
-def _ = math  # silence the unused import — math kept for future metrics

@@ -9,7 +9,6 @@ import pytest
 from ckg.sources.base import SourceSpec
 from ckg.sources.github import GitHubOrgProvider, GitHubUserProvider, _inject_token
 
-
 FAKE_ROWS = [
     {
         "id": 1, "name": "open", "full_name": "acme/open",

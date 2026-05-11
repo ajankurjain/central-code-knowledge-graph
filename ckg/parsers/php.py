@@ -59,7 +59,7 @@ def _walk(node, source: bytes, ns: str, parents: list[str], result: ParseResult)
             )
             body = child.child_by_field_name("body")
             if body is not None:
-                _walk(body, source, ns, parents + [name], result)
+                _walk(body, source, ns, [*parents, name], result)
         elif t in ("method_declaration", "function_definition"):
             name = field_text(child, source, "name") or "?"
             is_method = t == "method_declaration"

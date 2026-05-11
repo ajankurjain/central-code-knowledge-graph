@@ -66,10 +66,14 @@ def _walk(node, source: bytes, module_qname: str, result: ParseResult) -> None:
             # `import <path>` / `import ./foo.nix`
             head = n.child_by_field_name("function") or _first_named(n)
             arg = n.child_by_field_name("argument") or _last_named(n)
-            if head is not None and head.type == "identifier" and node_text(source, head) == "import":
-                if arg is not None:
-                    txt = node_text(source, arg).strip()
-                    result.imports.append(ImportEdge(module=txt.strip("<>'\""), is_relative=txt.startswith(".")))
+            if (
+                head is not None
+                and head.type == "identifier"
+                and node_text(source, head) == "import"
+                and arg is not None
+            ):
+                txt = node_text(source, arg).strip()
+                result.imports.append(ImportEdge(module=txt.strip("<>'\""), is_relative=txt.startswith(".")))
         for i in range(n.child_count - 1, -1, -1):
             stack.append(n.children[i])
 

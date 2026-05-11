@@ -49,7 +49,7 @@ def _walk(node, source: bytes, module_qname: str, parents: list[str], result: Pa
             ))
             body = child.child_by_field_name("body")
             if body is not None:
-                _walk(body, source, module_qname, parents + [name], result)
+                _walk(body, source, module_qname, [*parents, name], result)
         elif t in ("method", "singleton_method"):
             name_node = child.child_by_field_name("name")
             name = node_text(source, name_node) if name_node is not None else "?"

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from celery import shared_task
@@ -10,7 +10,8 @@ from celery import shared_task
 from ckg.config import get_settings
 from ckg.db.postgres import IngestRun, Repo, get_sessionmaker
 from ckg.logging import configure_logging, get_logger
-from ckg.services.ingest import IngestStats, IngestMode, ingest_repo as _ingest_repo
+from ckg.services.ingest import IngestMode, IngestStats
+from ckg.services.ingest import ingest_repo as _ingest_repo
 
 configure_logging(get_settings().log_level)
 log = get_logger(__name__)
@@ -28,7 +29,7 @@ def ingest_repo(self, repo_id: str, run_id: int, mode: str = "full") -> dict:
             return {"status": "missing"}
         run.status = "running"
         run.mode = mode
-        run.started_at = datetime.now(timezone.utc)
+        run.started_at = datetime.now(UTC)
         s.commit()
         url = repo.url
         branch = repo.default_branch
@@ -46,10 +47,10 @@ def ingest_repo(self, repo_id: str, run_id: int, mode: str = "full") -> dict:
             repo = s.get(Repo, repo_id)
             if run is not None:
                 run.status = "success"
-                run.finished_at = datetime.now(timezone.utc)
+                run.finished_at = datetime.now(UTC)
                 run.stats = stats.to_dict()
             if repo is not None:
-                repo.last_indexed_at = datetime.now(timezone.utc)
+                repo.last_indexed_at = datetime.now(UTC)
                 repo.last_indexed_sha = stats.head_sha
                 repo.languages = ",".join(sorted(stats.languages))
             s.commit()
@@ -61,7 +62,7 @@ def ingest_repo(self, repo_id: str, run_id: int, mode: str = "full") -> dict:
             run = s.get(IngestRun, run_id)
             if run is not None:
                 run.status = "failed"
-                run.finished_at = datetime.now(timezone.utc)
+                run.finished_at = datetime.now(UTC)
                 run.error = str(exc)[:1900]
                 s.commit()
         # Retry transient failures (network, etc.)

@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 try:
-    from tree_sitter_language_pack import get_language  # noqa: F401
+    from tree_sitter_language_pack import get_language
 
     HAS_TS = True
 except ImportError:  # pragma: no cover

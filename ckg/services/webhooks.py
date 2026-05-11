@@ -16,11 +16,10 @@ import hmac
 import json
 import secrets as _stdlib_secrets
 from dataclasses import dataclass
-from typing import Any
 
 from sqlalchemy import select
 
-from ckg.db.postgres import BulkSource, IngestRun, Repo, SourceRepo, get_sessionmaker
+from ckg.db.postgres import IngestRun, Repo, SourceRepo, get_sessionmaker
 from ckg.logging import get_logger
 
 log = get_logger(__name__)

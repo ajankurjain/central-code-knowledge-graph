@@ -59,7 +59,7 @@ def _walk(node, source: bytes, pkg: str, parents: list[str], result: ParseResult
             )
             body = child.child_by_field_name("body") or _template_body(child)
             if body is not None:
-                _walk(body, source, pkg, parents + [name], result)
+                _walk(body, source, pkg, [*parents, name], result)
         elif t in _FN_TYPES:
             name = field_text(child, source, "name") or "?"
             is_method = bool(parents)

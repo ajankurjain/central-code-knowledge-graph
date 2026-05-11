@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 @lru_cache(maxsize=1)
-def _model() -> "SentenceTransformer":
+def _model() -> SentenceTransformer:
     from sentence_transformers import SentenceTransformer  # heavy import
 
     return SentenceTransformer(get_settings().embedding_model)

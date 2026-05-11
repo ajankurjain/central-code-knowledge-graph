@@ -9,7 +9,6 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from ckg.sources._http import paginated_get
 from ckg.sources.base import DiscoveredRepo, SourceSpec
 
-
 GITHUB_API = "https://api.github.com"
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from ckg.parsers._ts import get_ts_parser, node_text
@@ -62,7 +62,7 @@ def _walk(node, source: bytes, module_qname: str, parents: list[str], result: Pa
             ))
             body = child.child_by_field_name("body")
             if body is not None:
-                _walk(body, source, module_qname, parents + [cname or "?"], result)
+                _walk(body, source, module_qname, [*parents, cname or "?"], result)
         elif child.type in ("function_definition", "async_function_definition"):
             fname = _ident(child.child_by_field_name("name"), source)
             qname = ".".join([module_qname, *parents, fname]) if fname else module_qname

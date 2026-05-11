@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from celery import shared_task
 from sqlalchemy import select
 
+from ckg.config import get_settings
 from ckg.db.postgres import BulkSource, IngestRun, Repo, get_sessionmaker
 from ckg.logging import configure_logging, get_logger
-from ckg.config import get_settings
 
 configure_logging(get_settings().log_level)
 log = get_logger(__name__)
@@ -21,7 +21,7 @@ def scan_sources_for_sync() -> dict:
     when (now - last_synced_at) >= interval."""
     from ckg.worker.celery_app import celery_app
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     queued: list[int] = []
     Session = get_sessionmaker()
     with Session() as s:
@@ -45,7 +45,7 @@ def scan_repos_for_poll() -> dict:
     ingest when (now - last_indexed_at) >= interval."""
     from ckg.worker.celery_app import celery_app
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     queued: list[str] = []
     Session = get_sessionmaker()
     with Session() as s:

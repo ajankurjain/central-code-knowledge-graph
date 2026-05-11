@@ -95,7 +95,22 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "SIM", "RUF"]
-ignore = ["E501"]
+ignore = [
+    "E501",  # line length
+    # FastAPI's documented idiom is `_: Principal = Depends(require_repo_read)` —
+    # B008 flags the Depends(...) default; we want that pattern.
+    "B008",
+    # SQLAlchemy idiom: `Session = get_sessionmaker()` then `with Session() as s:`.
+    # N806 wants lowercase locals but `Session` here is conventionally PascalCase.
+    "N806",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Local imports inside functions are deliberate in route handlers to avoid
+# Celery app import on cold start.
+"ckg/api/routes/repos.py" = ["E402"]
+# Tests import after a conditional `HAS_TS = True/False` block — deliberate.
+"tests/*.py" = ["E402", "RUF002"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
