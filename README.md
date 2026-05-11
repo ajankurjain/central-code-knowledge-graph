@@ -6,6 +6,8 @@
 
 AI coding tools re-read your entire codebase on every task. `ckg` fixes that. One server indexes every repo in your org with [Tree-sitter](https://tree-sitter.github.io/) across 26 languages, stores the structural map as a [Neo4j](https://neo4j.com/) property graph, keeps it fresh via incremental ingest + webhooks, and serves precise context to your AI assistant via [MCP](https://modelcontextprotocol.io/) so it reads only what matters.
 
+[![PyPI](https://img.shields.io/pypi/v/central-code-knowledge-graph.svg?label=pypi)](https://pypi.org/project/central-code-knowledge-graph/)
+[![CI](https://github.com/ajankurjain/central-code-knowledge-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/ajankurjain/central-code-knowledge-graph/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](pyproject.toml)
 [![Docker Compose](https://img.shields.io/badge/docker--compose-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
@@ -132,8 +134,25 @@ Open the web UI: <http://localhost:3000> (paste an API token to sign in).
 
 ### 4. Install the CLI
 
+From PyPI (recommended — CLI-only, light install):
+
 ```bash
-pip install -e .             # or: pipx install -e .
+pip install central-code-knowledge-graph
+# or, isolated:
+pipx install central-code-knowledge-graph
+```
+
+Or from a checkout for development:
+
+```bash
+pip install -e .
+# Or with everything (server stack + dev tools):
+pip install -e '.[dev]'
+```
+
+Then point the CLI at your server and sign in with the bootstrap token:
+
+```bash
 export CKG_SERVER=http://localhost:8080
 ckg login --token "$(grep ^CKG_BOOTSTRAP_TOKEN .env | cut -d= -f2)"
 

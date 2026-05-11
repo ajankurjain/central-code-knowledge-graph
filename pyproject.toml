@@ -3,79 +3,76 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ckg"
+name = "central-code-knowledge-graph"
 version = "0.1.0"
-description = "Central code knowledge graph — Neo4j-backed structural index of multi-repo codebases for AI agents"
+description = "Central, multi-repo code knowledge graph for AI agents — Neo4j + Tree-sitter + MCP."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Ankur" }]
-keywords = ["knowledge-graph", "code-review", "neo4j", "tree-sitter", "mcp", "ai-agents"]
+keywords = ["knowledge-graph", "code-review", "neo4j", "tree-sitter", "mcp", "ai-agents", "graphql", "code-search"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Quality Assurance",
 ]
 
+# Base install (`pip install central-code-knowledge-graph`) is the CLI only —
+# everything you need to point `ckg login`, `ckg repo …`, `ckg source …`,
+# `ckg arch …`, `ckg search …` at a server running in Docker.
 dependencies = [
-    # API
+    "typer>=0.13",
+    "httpx>=0.28",
+    "rich>=13.9",
+]
+
+[project.optional-dependencies]
+# Server-side stack (`pip install central-code-knowledge-graph[server]`).
+# The Docker image already includes these — only install this extra if you
+# want to run the API/worker outside Docker.
+server = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "python-multipart>=0.0.12",
-
-    # Auth
     "argon2-cffi>=23.1",
     "pyjwt>=2.9",
     "cryptography>=43.0",
-
-    # Storage
     "neo4j>=5.24",
     "psycopg[binary,pool]>=3.2",
     "sqlalchemy>=2.0.36",
     "alembic>=1.13",
     "redis>=5.2",
-
-    # Workers
     "celery[redis]>=5.4",
-
-    # Parsing
     "tree-sitter>=0.23",
     "tree-sitter-language-pack>=0.4",
     "gitpython>=3.1",
     "pyyaml>=6.0",
-
-    # Embeddings (lazy-imported in code)
     "sentence-transformers>=3.3",
     "numpy>=1.26",
-
-    # Architecture analysis — community detection, SCCs, metrics
     "networkx>=3.4",
-
-    # CLI / HTTP
-    "typer>=0.13",
-    "httpx>=0.28",
-    "rich>=13.9",
-
-    # GraphQL
     "strawberry-graphql[fastapi]>=0.252",
-
-    # Observability
     "structlog>=24.4",
     "prometheus-client>=0.21",
 ]
 
-[project.optional-dependencies]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
     "ruff>=0.7",
     "mypy>=1.13",
-    "httpx>=0.28",
+    # `dev` pulls everything `server` does so the full test suite can run.
+    "central-code-knowledge-graph[server]",
 ]
 
 [project.scripts]
@@ -84,6 +81,9 @@ ckg = "ckg.cli.main:app"
 [project.urls]
 Homepage = "https://github.com/ajankurjain/central-code-knowledge-graph"
 Issues = "https://github.com/ajankurjain/central-code-knowledge-graph/issues"
+Repository = "https://github.com/ajankurjain/central-code-knowledge-graph"
+Changelog = "https://github.com/ajankurjain/central-code-knowledge-graph/releases"
+Documentation = "https://github.com/ajankurjain/central-code-knowledge-graph#readme"
 
 [tool.setuptools.packages.find]
 where = ["."]
