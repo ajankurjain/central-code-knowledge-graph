@@ -88,15 +88,21 @@ def all_languages() -> list[str]:
 
 # Eager-load known parsers so the registry is populated on import
 def _init_registry() -> None:
-    # Import side effects register each parser
-    from ckg.parsers import python as _py  # noqa: F401
-    from ckg.parsers import javascript as _js  # noqa: F401
-    from ckg.parsers import rust as _rs  # noqa: F401
-    from ckg.parsers import go as _go  # noqa: F401
-    from ckg.parsers import java as _ja  # noqa: F401
-    from ckg.parsers import ruby as _rb  # noqa: F401
-    from ckg.parsers import c as _c  # noqa: F401
-    from ckg.parsers import cpp as _cpp  # noqa: F401
+    # Import side effects register each parser. Wrap in try/except per language
+    # so a missing grammar in `tree-sitter-language-pack` only drops that
+    # language, not the whole loader.
+    for modname in (
+        "python", "javascript", "rust", "go", "java", "ruby", "c", "cpp",
+        "csharp", "kotlin", "scala", "swift", "php", "solidity", "dart",
+        "r", "perl", "lua", "zig", "powershell", "julia", "nix",
+    ):
+        try:
+            __import__(f"ckg.parsers.{modname}")
+        except Exception:
+            # Grammar missing or parser self-test failed — skip silently.
+            # The registry simply won't list this language; ingest will
+            # treat files of that extension as unsupported.
+            pass
 
 
 _init_registry()
