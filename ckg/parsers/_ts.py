@@ -37,7 +37,7 @@ def get_ts_parser(language: str):
         p = _get_parser(language)
         if callable(getattr(p, "parse", None)):
             return p
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         last_err = e
 
     # Path 2: explicit Parser construction
@@ -50,12 +50,12 @@ def get_ts_parser(language: str):
         lang = get_language(language)
         try:
             p = TSParser(lang)  # tree-sitter ≥0.23 constructor form
-        except Exception:  # noqa: BLE001
+        except Exception:
             p = TSParser()
             p.language = lang  # tree-sitter <0.23 attribute form
         if callable(getattr(p, "parse", None)):
             return p
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         last_err = e
 
     raise ImportError(
