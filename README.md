@@ -1,17 +1,31 @@
+<div align="center">
+
 # central-code-knowledge-graph
 
-> A **central, multi-repo code knowledge graph** for AI agents. Neo4j-backed,
-> Tree-sitter parsing, full-text + vector search, MCP-ready. Drop-in for
-> Cursor / VS Code / Claude Code.
+**Stop re-reading. Start querying.**
+
+AI coding tools re-read your entire codebase on every task. `ckg` fixes that. One server indexes every repo in your org with [Tree-sitter](https://tree-sitter.github.io/) across 26 languages, stores the structural map as a [Neo4j](https://neo4j.com/) property graph, keeps it fresh via incremental ingest + webhooks, and serves precise context to your AI assistant via [MCP](https://modelcontextprotocol.io/) so it reads only what matters.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](pyproject.toml)
+[![Docker Compose](https://img.shields.io/badge/docker--compose-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![Neo4j](https://img.shields.io/badge/Neo4j-5.x-008CC1?logo=neo4j&logoColor=white)](docker-compose.yml)
+[![MCP](https://img.shields.io/badge/MCP-compatible-brightgreen)](integrations/cursor/README.md)
+[![Languages](https://img.shields.io/badge/languages-26-blueviolet)](#supported-languages)
+[![Tree-sitter](https://img.shields.io/badge/Tree--sitter-powered-orange)](https://tree-sitter.github.io/)
+
+</div>
 
 One server that:
 
 - ingests many repositories (not just one) and keeps them incrementally fresh
 - stores them as a Neo4j property graph (`File`, `Class`, `Function`,
   `Module` + `CONTAINS`, `DEFINES`, `HAS_METHOD`, `CALLS`, `IMPORTS`)
-- exposes **REST**, **MCP/JSON-RPC**, and a **`ckg` CLI**
+- exposes **REST**, **GraphQL**, **MCP/JSON-RPC**, and a **`ckg` CLI**
 - supports **structural** queries (callers, callees, imports, blast radius,
   downstream dependencies), **full-text** search, and **semantic** vector search
+- generates an **architecture map** with coupling warnings (cyclic deps, god
+  modules, SDP violations) every ingest
 - secures every endpoint with **scoped API tokens** (argon2id-hashed)
 - runs as a single `docker compose up`
 
@@ -31,6 +45,14 @@ One server that:
 | Whole-codebase index | One Neo4j graph spans all registered repos |
 | Neo4j-backed | Functions, classes, files, imports, calls all stored as labeled nodes + typed relationships |
 | Secure | API tokens with scopes (`admin`, `repo:write`, `repo:read`); hashed at rest |
+
+## Supported languages
+
+**Tree-sitter parsers (23):** Python · JavaScript (incl. JSX → **React**) · TypeScript (incl. TSX → **Angular**) · Rust · Go · Java · Ruby · C · C++ · C# · Kotlin · Scala · Swift · PHP · Solidity · Dart · R · Perl · Lua · Zig · PowerShell · Julia · Nix
+
+**Extraction wrappers (3):** **Vue** & **Svelte** SFCs (delegate `<script>` to JS/TS) · **Jupyter / Databricks** `.ipynb` (concatenate code cells, dispatch by kernel language)
+
+Pluggable — adding another language is one file under `ckg/parsers/` and one line in the registry.
 
 ## Architecture
 
