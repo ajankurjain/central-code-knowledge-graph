@@ -69,9 +69,14 @@ SCHEMA_STATEMENTS: list[str] = [
     "CREATE CONSTRAINT class_id IF NOT EXISTS FOR (c:Class) REQUIRE (c.repo_id, c.qualified_name) IS UNIQUE",
     "CREATE CONSTRAINT function_id IF NOT EXISTS FOR (fn:Function) REQUIRE (fn.repo_id, fn.qualified_name) IS UNIQUE",
     "CREATE CONSTRAINT module_id IF NOT EXISTS FOR (m:Module) REQUIRE (m.repo_id, m.name) IS UNIQUE",
+    # CallSite nodes are owned by their caller, identified by (caller, callee_name, line).
+    # We keep them around between ingests so incremental updates only have to refresh
+    # the changed files (Phase 2).
+    "CREATE CONSTRAINT call_site_id IF NOT EXISTS FOR (cs:CallSite) REQUIRE (cs.repo_id, cs.caller_qname, cs.callee_name, cs.line) IS UNIQUE",
 
     # Lookup indexes
     "CREATE INDEX file_language IF NOT EXISTS FOR (f:File) ON (f.language)",
+    "CREATE INDEX file_sha IF NOT EXISTS FOR (f:File) ON (f.sha)",
     "CREATE INDEX function_name IF NOT EXISTS FOR (fn:Function) ON (fn.name)",
     "CREATE INDEX class_name IF NOT EXISTS FOR (c:Class) ON (c.name)",
 

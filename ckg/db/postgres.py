@@ -61,6 +61,7 @@ class IngestRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     repo_id: Mapped[str] = mapped_column(String(64), ForeignKey("repos.id", ondelete="CASCADE"))
     status: Mapped[str] = mapped_column(String(30))  # queued|running|success|failed
+    mode: Mapped[str] = mapped_column(String(20), default="full")  # full|incremental
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     stats: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

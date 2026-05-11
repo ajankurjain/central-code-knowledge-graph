@@ -5,7 +5,9 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -36,6 +38,7 @@ class IngestRunOut(BaseModel):
     id: int
     repo_id: str
     status: str
+    mode: str
     started_at: datetime
     finished_at: datetime | None
     stats: dict | None
@@ -111,8 +114,14 @@ def delete_repo(repo_id: str, principal: Principal = Depends(require_repo_write)
 
 
 @router.post("/{repo_id}/ingest", response_model=IngestRunOut, status_code=status.HTTP_202_ACCEPTED)
-def trigger_ingest(repo_id: str, principal: Principal = Depends(require_repo_write)) -> IngestRunOut:
-    """Queue a full re-parse of the repo. Returns the run id immediately."""
+def trigger_ingest(
+    repo_id: str,
+    mode: Literal["full", "incremental"] = Query(
+        "incremental", description="`incremental` only re-parses files whose sha changed; `full` wipes and re-parses everything."
+    ),
+    principal: Principal = Depends(require_repo_write),
+) -> IngestRunOut:
+    """Queue an ingest. Returns the run id immediately."""
     from ckg.worker.celery_app import celery_app  # local import keeps API startup fast
 
     Session = get_sessionmaker()
@@ -120,25 +129,27 @@ def trigger_ingest(repo_id: str, principal: Principal = Depends(require_repo_wri
         r = s.get(Repo, repo_id)
         if not r:
             raise HTTPException(404, "repo not found")
-        run = IngestRun(repo_id=repo_id, status="queued")
+        # If this is the first ingest for the repo, force a full ingest
+        # regardless of caller's request — we have nothing to diff against.
+        effective_mode = "full" if r.last_indexed_at is None else mode
+        run = IngestRun(repo_id=repo_id, status="queued", mode=effective_mode)
         s.add(run)
-        s.add(AuditLog(actor=principal.name, action="repo.ingest", target=repo_id))
+        s.add(AuditLog(
+            actor=principal.name, action="repo.ingest", target=repo_id,
+            detail={"mode": effective_mode, "requested": mode},
+        ))
         s.commit()
         s.refresh(run)
         run_id = run.id
 
-    celery_app.send_task("ckg.ingest_repo", args=[repo_id, run_id])
+    celery_app.send_task("ckg.ingest_repo", args=[repo_id, run_id, effective_mode])
 
     with Session() as s:
         run = s.get(IngestRun, run_id)
         return IngestRunOut(
-            id=run.id,
-            repo_id=run.repo_id,
-            status=run.status,
-            started_at=run.started_at,
-            finished_at=run.finished_at,
-            stats=run.stats,
-            error=run.error,
+            id=run.id, repo_id=run.repo_id, status=run.status, mode=run.mode,
+            started_at=run.started_at, finished_at=run.finished_at,
+            stats=run.stats, error=run.error,
         )
 
 
@@ -151,8 +162,9 @@ def list_runs(repo_id: str, _: Principal = Depends(require_repo_read)) -> list[I
         ).scalars().all()
         return [
             IngestRunOut(
-                id=r.id, repo_id=r.repo_id, status=r.status, started_at=r.started_at,
-                finished_at=r.finished_at, stats=r.stats, error=r.error,
+                id=r.id, repo_id=r.repo_id, status=r.status, mode=r.mode,
+                started_at=r.started_at, finished_at=r.finished_at,
+                stats=r.stats, error=r.error,
             )
             for r in runs
         ]

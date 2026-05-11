@@ -176,10 +176,17 @@ def repo_list() -> None:
 
 
 @repo_app.command("ingest")
-def repo_ingest(repo_id: str) -> None:
-    """Queue a re-parse. Returns the run id."""
+def repo_ingest(
+    repo_id: str,
+    full: bool = typer.Option(False, "--full", help="Wipe and re-parse from scratch."),
+    incremental: bool = typer.Option(False, "--incremental", help="(default) only re-parse files whose sha changed."),
+) -> None:
+    """Queue an ingest. Returns the run id."""
+    if full and incremental:
+        raise typer.BadParameter("pass at most one of --full / --incremental")
+    mode = "full" if full else "incremental"
     with _client() as c:
-        r = c.post(f"/v1/repos/{repo_id}/ingest")
+        r = c.post(f"/v1/repos/{repo_id}/ingest", params={"mode": mode})
         r.raise_for_status()
         _print(r.json())
 
@@ -193,16 +200,18 @@ def repo_runs(repo_id: str) -> None:
     if not rows:
         console.print("(no runs)")
         return
-    table = Table("id", "status", "started", "finished", "files", "fns", "calls", "error")
+    table = Table("id", "mode", "status", "started", "finished", "files", "Δadd", "Δchg", "Δrm", "fns", "error")
     for row in rows:
         stats = row.get("stats") or {}
         table.add_row(
-            str(row["id"]), row["status"],
+            str(row["id"]), row.get("mode", "—"), row["status"],
             row["started_at"] or "—",
             row.get("finished_at") or "—",
             str(stats.get("files_parsed", "—")),
+            str(stats.get("files_added", "—")),
+            str(stats.get("files_changed", "—")),
+            str(stats.get("files_removed", "—")),
             str(stats.get("functions", "—")),
-            str(stats.get("calls", "—")),
             (row.get("error") or "")[:60],
         )
     console.print(table)

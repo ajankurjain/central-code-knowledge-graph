@@ -10,14 +10,14 @@ from celery import shared_task
 from ckg.config import get_settings
 from ckg.db.postgres import IngestRun, Repo, get_sessionmaker
 from ckg.logging import configure_logging, get_logger
-from ckg.services.ingest import IngestStats, ingest_repo as _ingest_repo
+from ckg.services.ingest import IngestStats, IngestMode, ingest_repo as _ingest_repo
 
 configure_logging(get_settings().log_level)
 log = get_logger(__name__)
 
 
 @shared_task(name="ckg.ingest_repo", bind=True, max_retries=2)
-def ingest_repo(self, repo_id: str, run_id: int) -> dict:
+def ingest_repo(self, repo_id: str, run_id: int, mode: str = "full") -> dict:
     """Clone / refresh the repo and write its graph to Neo4j."""
     Session = get_sessionmaker()
     with Session() as s:
@@ -27,6 +27,7 @@ def ingest_repo(self, repo_id: str, run_id: int) -> dict:
             log.warning("ingest_no_repo_or_run", repo_id=repo_id, run_id=run_id)
             return {"status": "missing"}
         run.status = "running"
+        run.mode = mode
         run.started_at = datetime.now(timezone.utc)
         s.commit()
         url = repo.url
@@ -36,7 +37,10 @@ def ingest_repo(self, repo_id: str, run_id: int) -> dict:
     workdir = Path(s_settings.repo_root) / repo_id
 
     try:
-        stats: IngestStats = _ingest_repo(repo_id=repo_id, url=url, branch=branch, workdir=workdir)
+        m: IngestMode = "incremental" if mode == "incremental" else "full"
+        stats: IngestStats = _ingest_repo(
+            repo_id=repo_id, url=url, branch=branch, workdir=workdir, mode=m,
+        )
         with Session() as s:
             run = s.get(IngestRun, run_id)
             repo = s.get(Repo, repo_id)
