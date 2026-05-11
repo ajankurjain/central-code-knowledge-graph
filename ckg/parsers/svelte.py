@@ -21,9 +21,14 @@ from ckg.parsers.base import (
 from ckg.parsers.javascript import JsTsParser
 
 _SCRIPT_BLOCK = re.compile(
-    rb"<script\b([^>]*)>(.*?)</script\s*>",
+    rb"<script\b([^>]*)>(.*?)</script[^>]*>",
     re.IGNORECASE | re.DOTALL,
 )
+# Note: closing tag accepts any junk between `script` and `>` (e.g.
+# `</script bar>`, `</script\n>`). HTML5 parsers tolerate that, so the
+# regex must too — otherwise an unusual-but-valid SFC would leave a
+# `<script>` block unclosed and we'd silently drop the content
+# (CodeQL py/bad-tag-filter).
 _LANG_ATTR = re.compile(rb'lang\s*=\s*["\']([^"\']+)["\']', re.IGNORECASE)
 
 
