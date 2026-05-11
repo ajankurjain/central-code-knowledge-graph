@@ -66,3 +66,17 @@ def ingest_repo(self, repo_id: str, run_id: int, mode: str = "full") -> dict:
                 s.commit()
         # Retry transient failures (network, etc.)
         raise self.retry(exc=exc, countdown=30) from exc
+
+
+@shared_task(name="ckg.compute_architecture")
+def compute_architecture_task(repo_id: str) -> dict:
+    """Build the cluster map + warnings for `repo_id`. Idempotent — replaces
+    prior Cluster/Warning nodes for the repo on each run."""
+    from ckg.services.architecture import compute_architecture
+
+    try:
+        stats = compute_architecture(repo_id)
+        return stats.to_dict()
+    except Exception as exc:
+        log.exception("arch_failed", repo_id=repo_id, error=str(exc))
+        raise

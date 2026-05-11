@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from ckg import __version__
+from ckg.api.routes import architecture as architecture_routes
 from ckg.api.routes import auth as auth_routes
 from ckg.api.routes import graph as graph_routes
 from ckg.api.routes import graphql as graphql_routes
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
     app.include_router(mcp_routes.router, prefix="/v1")
     app.include_router(graphql_routes.router, prefix="/v1")
     app.include_router(webhooks_routes.router, prefix="/v1")
+    app.include_router(architecture_routes.router, prefix="/v1")
     return app
 
 

@@ -73,12 +73,16 @@ SCHEMA_STATEMENTS: list[str] = [
     # We keep them around between ingests so incremental updates only have to refresh
     # the changed files (Phase 2).
     "CREATE CONSTRAINT call_site_id IF NOT EXISTS FOR (cs:CallSite) REQUIRE (cs.repo_id, cs.caller_qname, cs.callee_name, cs.line) IS UNIQUE",
+    # Architecture-analysis outputs (Phase 6) — clusters of files and design-smell warnings.
+    "CREATE CONSTRAINT cluster_id IF NOT EXISTS FOR (cl:Cluster) REQUIRE (cl.repo_id, cl.id) IS UNIQUE",
+    "CREATE CONSTRAINT warning_id IF NOT EXISTS FOR (w:Warning) REQUIRE (w.repo_id, w.kind, w.target_kind, w.target_id) IS UNIQUE",
 
     # Lookup indexes
     "CREATE INDEX file_language IF NOT EXISTS FOR (f:File) ON (f.language)",
     "CREATE INDEX file_sha IF NOT EXISTS FOR (f:File) ON (f.sha)",
     "CREATE INDEX function_name IF NOT EXISTS FOR (fn:Function) ON (fn.name)",
     "CREATE INDEX class_name IF NOT EXISTS FOR (c:Class) ON (c.name)",
+    "CREATE INDEX warning_severity IF NOT EXISTS FOR (w:Warning) ON (w.severity)",
 
     # Full-text indexes
     "CREATE FULLTEXT INDEX fn_text IF NOT EXISTS FOR (fn:Function) ON EACH [fn.name, fn.qualified_name, fn.doc]",

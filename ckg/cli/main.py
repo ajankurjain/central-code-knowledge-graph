@@ -32,12 +32,17 @@ source_app = typer.Typer(
     no_args_is_help=True,
     help="Bulk-source ingest — paste a URL, pull every accessible repo.",
 )
+arch_app = typer.Typer(
+    no_args_is_help=True,
+    help="Auto-generated architecture map + coupling warnings.",
+)
 
 app.add_typer(repo_app, name="repo")
 app.add_typer(token_app, name="token")
 app.add_typer(graph_app, name="graph")
 app.add_typer(search_app, name="search")
 app.add_typer(source_app, name="source")
+app.add_typer(arch_app, name="arch")
 
 console = Console()
 
@@ -482,6 +487,77 @@ def main() -> None:
     except httpx.HTTPStatusError as exc:
         console.print(f"[red]HTTP {exc.response.status_code}[/red]: {exc.response.text}", file=sys.stderr)
         raise typer.Exit(1)
+
+
+# ── architecture ────────────────────────────────────────────────────────────
+
+
+@arch_app.command("compute")
+def arch_compute(repo_id: str) -> None:
+    """Queue a recompute of the architecture map for this repo."""
+    with _client() as c:
+        r = c.post(f"/v1/repos/{repo_id}/architecture")
+        r.raise_for_status()
+        _print(r.json())
+
+
+@arch_app.command("show")
+def arch_show(repo_id: str) -> None:
+    """List clusters and their cross-cluster dependencies."""
+    with _client() as c:
+        r = c.get(f"/v1/repos/{repo_id}/architecture")
+        r.raise_for_status()
+        data = r.json()
+    clusters = data.get("clusters") or []
+    edges = data.get("edges") or []
+    if not clusters:
+        console.print(
+            "[yellow]No architecture yet.[/yellow] Run "
+            f"[bold]ckg arch compute {repo_id}[/bold] and try again in a few seconds."
+        )
+        return
+    table = Table("id", "name", "files", "fan in", "fan out", "instability", "cohesion")
+    for c in clusters:
+        table.add_row(
+            str(c["id"]), c["name"], str(c["file_count"]),
+            str(c.get("fan_in", "—")), str(c.get("fan_out", "—")),
+            f"{c['instability']:.2f}", f"{c['cohesion']:.2f}",
+        )
+    console.print("[bold]clusters[/bold]")
+    console.print(table)
+    if edges:
+        edge_table = Table("source", "target", "weight", "files")
+        for e in edges:
+            edge_table.add_row(str(e["source"]), str(e["target"]), str(e["weight"]), str(e["cross_file_edges"]))
+        console.print("[bold]dependencies[/bold]")
+        console.print(edge_table)
+
+
+@arch_app.command("warnings")
+def arch_warnings(
+    repo_id: str,
+    severity: str = typer.Option("", "--severity", "-s", help="Filter by severity (high|medium|low)"),
+) -> None:
+    """List coupling warnings detected for this repo."""
+    params: dict[str, str] = {}
+    if severity:
+        params["severity"] = severity
+    with _client() as c:
+        r = c.get(f"/v1/repos/{repo_id}/architecture/warnings", params=params)
+        r.raise_for_status()
+        rows = r.json().get("warnings") or []
+    if not rows:
+        console.print("[green]No warnings.[/green]")
+        return
+    table = Table("severity", "kind", "target", "message")
+    for w in rows:
+        color = {"high": "red", "medium": "yellow", "low": "cyan"}.get(w["severity"], "white")
+        table.add_row(
+            f"[{color}]{w['severity']}[/{color}]",
+            w["kind"], f"{w['target_kind']}:{w['target_id']}",
+            w["message"],
+        )
+    console.print(table)
 
 
 if __name__ == "__main__":
