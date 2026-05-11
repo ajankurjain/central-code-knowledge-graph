@@ -21,7 +21,7 @@ One server that:
 |---|---|
 | Rock-solid, won't fall over | Stateless API + workers; Neo4j/Postgres/Redis run with healthchecks + `restart: unless-stopped`; horizontal scale via `--scale worker=N` |
 | Fast relationship search for AI agents | Native graph DB (Cypher) + Lucene FTS + vector index — all in Neo4j |
-| Multi-language | Tree-sitter: **Python, JS/TS, Rust, Go, Java, Ruby, C, C++**. Pluggable — one file under `ckg/parsers/` adds another language |
+| Multi-language | Tree-sitter parsers (23): **Python, JS/TS** (incl. JSX/TSX → React, Angular), **Rust, Go, Java, Ruby, C, C++, C#, Kotlin, Scala, Swift, PHP, Solidity, Dart, R, Perl, Lua, Zig, PowerShell, Julia, Nix**. Extraction wrappers (3): **Vue, Svelte** (delegates `<script>` to JS/TS), **Jupyter/Databricks `.ipynb`** (concatenates code cells, dispatches by kernel). Pluggable — one file under `ckg/parsers/` adds another language |
 | Precise cross-file edges | **Opt-in LSP pass** (`CKG_LSP_ENABLED=true`) upgrades CALLS edges with language-server-resolved targets. Pyright today; rust-analyzer / gopls / ts-server / jdtls planned. Graph stays functional with no LSP installed |
 | Fast updates | **Incremental ingest** (`--incremental`): sha-diffs files against the graph, only re-parses what changed. Full reparse stays available as `--full` |
 | Context for AI tools | Built-in MCP HTTP server → Cursor, VS Code, Claude Code drop in |

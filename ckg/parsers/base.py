@@ -95,6 +95,7 @@ def _init_registry() -> None:
         "python", "javascript", "rust", "go", "java", "ruby", "c", "cpp",
         "csharp", "kotlin", "scala", "swift", "php", "solidity", "dart",
         "r", "perl", "lua", "zig", "powershell", "julia", "nix",
+        "vue", "svelte", "ipynb",
     ):
         try:
             __import__(f"ckg.parsers.{modname}")
