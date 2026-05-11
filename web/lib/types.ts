@@ -76,6 +76,41 @@ export type SourceRepo = {
   fork: boolean;
 };
 
+export type Cluster = {
+  id: number;
+  name: string;
+  file_count: number;
+  instability: number;
+  cohesion: number;
+  fan_in: number;
+  fan_out: number;
+  computed_at: string | null;
+  files: string[];
+};
+
+export type ClusterEdge = {
+  source: number;
+  target: number;
+  weight: number;
+  cross_file_edges: number;
+};
+
+export type ArchitectureMap = {
+  repo_id: string;
+  clusters: Cluster[];
+  edges: ClusterEdge[];
+};
+
+export type Warning = {
+  kind: string;
+  severity: "high" | "medium" | "low" | string;
+  target_kind: string;
+  target_id: string;
+  message: string;
+  detail: Record<string, unknown> | null;
+  computed_at: string | null;
+};
+
 export type FileOverview = {
   repo_id: string;
   path: string;

@@ -52,6 +52,9 @@ dependencies = [
     "sentence-transformers>=3.3",
     "numpy>=1.26",
 
+    # Architecture analysis — community detection, SCCs, metrics
+    "networkx>=3.4",
+
     # CLI / HTTP
     "typer>=0.13",
     "httpx>=0.28",
