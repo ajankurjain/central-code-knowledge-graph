@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
     # Language filter
     enabled_languages: str = Field(
-        "python,javascript,typescript,rust,go,java,ruby",
+        "python,javascript,typescript,rust,go,java,ruby,c,cpp",
         alias="CKG_ENABLED_LANGUAGES",
     )
 

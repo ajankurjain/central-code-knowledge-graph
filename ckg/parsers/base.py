@@ -94,6 +94,8 @@ def _init_registry() -> None:
     from ckg.parsers import go as _go  # noqa: F401
     from ckg.parsers import java as _ja  # noqa: F401
     from ckg.parsers import ruby as _rb  # noqa: F401
+    from ckg.parsers import c as _c  # noqa: F401
+    from ckg.parsers import cpp as _cpp  # noqa: F401
 
 
 _init_registry()
