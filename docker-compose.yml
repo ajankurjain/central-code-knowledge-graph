@@ -98,6 +98,21 @@ services:
     volumes:
       - repo_data:/var/lib/ckg/repos
 
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    restart: unless-stopped
+    environment:
+      # Browser fetches the API; this must be reachable from the user's
+      # machine, not from inside the container.
+      NEXT_PUBLIC_CKG_API: ${CKG_WEB_API_URL:-http://localhost:8080}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${CKG_WEB_PORT:-3000}:3000"
+
 volumes:
   neo4j_data:
   neo4j_logs:

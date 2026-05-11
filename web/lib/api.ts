@@ -1,0 +1,87 @@
+// Typed API client. Reads the API base URL at build time (NEXT_PUBLIC_CKG_API)
+// and the token at runtime from localStorage.
+
+import { getToken } from "./auth";
+import type {
+  CallersResp,
+  FileOverview,
+  IngestRun,
+  Repo,
+  SearchResp,
+  Stats,
+} from "./types";
+
+const BASE = (process.env.NEXT_PUBLIC_CKG_API || "http://localhost:8080").replace(/\/+$/, "");
+
+class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = getToken();
+  const headers = new Headers(init.headers);
+  headers.set("accept", "application/json");
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
+
+  const r = await fetch(`${BASE}${path}`, { ...init, headers });
+  if (!r.ok) {
+    const body = await r.text();
+    throw new ApiError(r.status, body || r.statusText);
+  }
+  if (r.status === 204) return undefined as unknown as T;
+  return (await r.json()) as T;
+}
+
+function qs(params: Record<string, string | number | undefined | null>): string {
+  const usp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    usp.append(k, String(v));
+  }
+  const s = usp.toString();
+  return s ? `?${s}` : "";
+}
+
+export const api = {
+  ready: () => req<{ ready: boolean; checks: Record<string, boolean>; version: string }>("/readyz"),
+
+  stats: () => req<Stats>("/v1/graph/stats"),
+
+  repos: () => req<Repo[]>("/v1/repos"),
+  repo: (id: string) => req<Repo>(`/v1/repos/${encodeURIComponent(id)}`),
+  ingest: (id: string, mode: "full" | "incremental" = "incremental") =>
+    req<IngestRun>(`/v1/repos/${encodeURIComponent(id)}/ingest${qs({ mode })}`, { method: "POST" }),
+  runs: (id: string) => req<IngestRun[]>(`/v1/repos/${encodeURIComponent(id)}/runs`),
+  registerRepo: (id: string, url: string, branch = "main") =>
+    req<Repo>("/v1/repos", {
+      method: "POST",
+      body: JSON.stringify({ id, url, default_branch: branch }),
+    }),
+
+  callersOf: (repoId: string, qn: string, depth = 1, limit = 100) =>
+    req<CallersResp>(
+      `/v1/graph/callers_of${qs({ repo_id: repoId, qualified_name: qn, depth, limit })}`,
+    ),
+  calleesOf: (repoId: string, qn: string, depth = 1, limit = 100) =>
+    req<CallersResp>(
+      `/v1/graph/callees_of${qs({ repo_id: repoId, qualified_name: qn, depth, limit })}`,
+    ),
+  impact: (repoId: string, path: string, depth = 2, limit = 500) =>
+    req<{ source: string; depth: number; impacted_files: { path: string; language: string }[] }>(
+      `/v1/graph/impact_radius${qs({ repo_id: repoId, path, depth, limit })}`,
+    ),
+  fileOverview: (repoId: string, path: string) =>
+    req<FileOverview>(`/v1/graph/file${qs({ repo_id: repoId, path })}`),
+
+  keyword: (q: string, repoId?: string, limit = 25) =>
+    req<SearchResp>(`/v1/search/keyword${qs({ q, repo_id: repoId, limit })}`),
+  semantic: (q: string, repoId?: string, limit = 10) =>
+    req<SearchResp>(`/v1/search/semantic${qs({ q, repo_id: repoId, limit })}`),
+};
+
+export { ApiError, BASE as API_BASE };

@@ -49,6 +49,12 @@ api-shell:
 worker-shell:
 	docker compose exec worker bash
 
+web-shell:
+	docker compose exec web sh
+
+web-dev:
+	cd web && npm install --legacy-peer-deps && npm run dev
+
 test:
 	docker compose exec api pytest -q
 

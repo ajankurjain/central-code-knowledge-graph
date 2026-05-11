@@ -106,6 +106,8 @@ curl http://localhost:8080/readyz
 
 Open the auto-generated API docs: <http://localhost:8080/docs>
 
+Open the web UI: <http://localhost:3000> (paste an API token to sign in).
+
 ### 4. Install the CLI
 
 ```bash
@@ -130,7 +132,20 @@ ckg search semantic "where do we parse Tree-sitter trees?"
 ckg graph callers my-repo my.module.foo --depth 2
 ```
 
-### 6. Hook up your editor
+### 6. Browse it in the UI
+
+Open <http://localhost:3000>, paste an API token, and explore:
+
+- **Dashboard** — node/edge/repo/file counts; repo list
+- **Repos** — register repos, queue incremental or full ingests, watch run status
+- **Search** — keyword (Lucene FTS) or semantic (vector) across all (or one) repos
+- **Graph** — force-directed call graph for any function, callers + callees up to depth 4
+
+The UI is a static Next.js bundle served from the `web` container; the
+browser hits the API directly using the bearer token kept in
+`localStorage`.
+
+### 7. Hook up your editor
 
 | Editor | Guide |
 |---|---|
@@ -181,10 +196,12 @@ Full reference: [docs/api.md](docs/api.md).
 - [x] **Phase 1** — Foundation, auth, Python/JS/TS ingest, REST + MCP, CLI
 - [x] **Phase 2** — Incremental updates (per-file sha diff), GraphQL endpoint, Rust/Go/Java/Ruby parsers
 - [x] **Phase 3** — C/C++ parsers; opt-in LSP precision pass (pyright today; rust-analyzer / gopls / ts-server / jdtls planned)
-- [ ] **Phase 4** — Next.js web UI with graph viz + flow viewer
+- [x] **Phase 4** — Next.js web UI: token login, dashboard, repo management, search (keyword + semantic), force-directed function call-graph viz
 - [ ] **Phase 5** — Multi-tenant orgs/users, k8s/Helm, OpenTelemetry, Neo4j Causal Cluster
 
 ## Development
+
+Backend:
 
 ```bash
 pip install -e '.[dev]'
@@ -192,19 +209,30 @@ pytest -q
 ruff check ckg
 ```
 
+Web UI:
+
+```bash
+cd web
+npm install --legacy-peer-deps
+NEXT_PUBLIC_CKG_API=http://localhost:8080 npm run dev
+# open http://localhost:3000
+```
+
 Project layout:
 
 ```
 ckg/
-├── api/        # FastAPI app + routes
+├── api/        # FastAPI app + routes (REST + GraphQL + MCP)
 ├── auth.py     # API tokens, principal, scopes
 ├── cli/        # `ckg` Typer CLI
 ├── config.py   # Pydantic settings
 ├── db/         # neo4j / postgres / redis clients + schema
+├── lsp/        # Opt-in LSP precision pass (Phase 3)
 ├── parsers/    # tree-sitter parsers, one per language
-├── services/   # ingest, embeddings
+├── services/   # ingest, embeddings, lsp_resolve
 └── worker/     # Celery app + tasks
-docker/         # API + worker Dockerfiles
+web/            # Next.js 15 + Tailwind + react-force-graph-2d (Phase 4)
+docker/         # API + worker + web Dockerfiles
 docs/           # ADRs, deployment, API
 integrations/   # cursor / vscode / claude-code MCP snippets
 tests/          # pytest
