@@ -10,8 +10,8 @@ One server that:
 - stores them as a Neo4j property graph (`File`, `Class`, `Function`,
   `Module` + `CONTAINS`, `DEFINES`, `HAS_METHOD`, `CALLS`, `IMPORTS`)
 - exposes **REST**, **MCP/JSON-RPC**, and a **`ckg` CLI**
-- supports **structural** queries (callers, callees, imports, impact radius),
-  **full-text** search, and **semantic** vector search
+- supports **structural** queries (callers, callees, imports, blast radius,
+  downstream dependencies), **full-text** search, and **semantic** vector search
 - secures every endpoint with **scoped API tokens** (argon2id-hashed)
 - runs as a single `docker compose up`
 
@@ -129,7 +129,9 @@ ckg repo runs      my-repo          # watch progress
 ckg graph stats
 ckg search keyword "ingest pipeline"
 ckg search semantic "where do we parse Tree-sitter trees?"
-ckg graph callers my-repo my.module.foo --depth 2
+ckg graph callers     my-repo my.module.foo --depth 2
+ckg graph blast       my-repo src/foo/bar.py            # what breaks if bar.py changes
+ckg graph downstream  my-repo src/foo/bar.py            # what bar.py depends on
 ```
 
 ### 5b. Or pull an entire org / group / workspace at once
@@ -245,7 +247,8 @@ Full reference: [docs/api.md](docs/api.md).
 | `GET` | `/v1/graph/callers_of` | Transitive callers |
 | `GET` | `/v1/graph/callees_of` | Transitive callees |
 | `GET` | `/v1/graph/imports_of` | Imports for a file |
-| `GET` | `/v1/graph/impact_radius` | Blast radius for a file |
+| `GET` | `/v1/graph/blast_radius` | Files affected if this file changes (upstream callers) |
+| `GET` | `/v1/graph/downstream_dependencies` | Files this file depends on (outgoing callees) |
 | `GET` | `/v1/graph/file` | Symbols in a file |
 | `GET` | `/v1/search/keyword` | Lucene FTS |
 | `GET` | `/v1/search/semantic` | Vector cosine |

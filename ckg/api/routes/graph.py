@@ -86,26 +86,67 @@ def imports_of(
     return {"file": path, "results": rows}
 
 
-@router.get("/impact_radius")
-def impact_radius(
+@router.get("/blast_radius")
+def blast_radius(
     repo_id: str,
     path: str,
     depth: int = Query(2, ge=1, le=4),
     limit: int = Query(500, ge=1, le=5000),
     _: Principal = Depends(require_repo_read),
 ) -> dict:
-    """Files reachable from this file via the call/import graph (downstream impact)."""
+    """Files that would be affected if this file changes — i.e. the *upstream*
+    callers of functions defined here, transitively up to `depth` hops.
+
+    Cypher walks `(target:Function in src)<-[:CALLS*1..N]-(caller:Function)`,
+    then reports the files containing those callers. CALLS edges resolved
+    name-only (Phase 1) inflate this with false positives; turn on
+    `CKG_LSP_ENABLED=true` for precise edges where supported.
+
+    Known gap: this does not yet follow `:IMPORTS` edges. A file that
+    imports a class/type defined here but never invokes a function on it
+    is not currently counted. Tracked in ADR-0008.
+    """
+    cy = f"""
+        MATCH (src:File {{repo_id: $rid, path: $path}})
+        MATCH (src)-[:DEFINES]->(target:Function)<-[:CALLS*1..{depth}]-(caller:Function)
+        MATCH (caller_file:File)-[:DEFINES]->(caller)
+        WHERE caller_file <> src
+        RETURN DISTINCT caller_file.path AS path,
+                        caller_file.language AS language
+        LIMIT $limit
+    """
+    with neo_session() as s:
+        rows = s.run(cy, rid=repo_id, path=path, limit=limit).data()
+    return {"source": path, "depth": depth, "affected_files": rows}
+
+
+@router.get("/downstream_dependencies")
+def downstream_dependencies(
+    repo_id: str,
+    path: str,
+    depth: int = Query(2, ge=1, le=4),
+    limit: int = Query(500, ge=1, le=5000),
+    _: Principal = Depends(require_repo_read),
+) -> dict:
+    """The *opposite* of blast radius: files that this file depends on —
+    everything reachable from its functions via outgoing CALLS edges, up to
+    `depth` hops.
+
+    Useful for "what does this file pull in" / "what would break this file
+    if it disappeared". Same precision caveats as blast_radius.
+    """
     cy = f"""
         MATCH (src:File {{repo_id: $rid, path: $path}})
         MATCH (src)-[:DEFINES]->(:Function)-[:CALLS*1..{depth}]->(target:Function)
         MATCH (target_file:File)-[:DEFINES]->(target)
+        WHERE target_file <> src
         RETURN DISTINCT target_file.path AS path,
                         target_file.language AS language
         LIMIT $limit
     """
     with neo_session() as s:
         rows = s.run(cy, rid=repo_id, path=path, limit=limit).data()
-    return {"source": path, "depth": depth, "impacted_files": rows}
+    return {"source": path, "depth": depth, "dependency_files": rows}
 
 
 @router.get("/file")

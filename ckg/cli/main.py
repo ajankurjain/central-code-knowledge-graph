@@ -328,10 +328,20 @@ def graph_callees(repo_id: str, qualified_name: str, depth: int = 1, limit: int 
         _print(r.json())
 
 
-@graph_app.command("impact")
-def graph_impact(repo_id: str, path: str, depth: int = 2) -> None:
+@graph_app.command("blast")
+def graph_blast(repo_id: str, path: str, depth: int = 2) -> None:
+    """Files that would break if this file changes (upstream callers)."""
     with _client() as c:
-        r = c.get("/v1/graph/impact_radius", params={"repo_id": repo_id, "path": path, "depth": depth})
+        r = c.get("/v1/graph/blast_radius", params={"repo_id": repo_id, "path": path, "depth": depth})
+        r.raise_for_status()
+        _print(r.json())
+
+
+@graph_app.command("downstream")
+def graph_downstream(repo_id: str, path: str, depth: int = 2) -> None:
+    """Files this file depends on (outgoing callees)."""
+    with _client() as c:
+        r = c.get("/v1/graph/downstream_dependencies", params={"repo_id": repo_id, "path": path, "depth": depth})
         r.raise_for_status()
         _print(r.json())
 

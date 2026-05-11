@@ -19,11 +19,12 @@ from pydantic import BaseModel
 
 from ckg.auth import Principal, require_repo_read
 from ckg.api.routes.graph import (
+    blast_radius,
     callees_of,
     callers_of,
+    downstream_dependencies,
     file_overview,
     graph_stats,
-    impact_radius,
     imports_of,
 )
 from ckg.api.routes.search import keyword_search, semantic_search
@@ -86,8 +87,22 @@ TOOL_DEFS = [
         },
     },
     {
-        "name": "ckg.impact_radius",
-        "description": "Files transitively impacted by a change to this file.",
+        "name": "ckg.blast_radius",
+        "description": "Files that would be affected if this file changes — upstream callers of its functions, transitively.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["repo_id", "path"],
+            "properties": {
+                "repo_id": {"type": "string"},
+                "path": {"type": "string"},
+                "depth": {"type": "integer", "minimum": 1, "maximum": 4, "default": 2},
+                "limit": {"type": "integer", "default": 500},
+            },
+        },
+    },
+    {
+        "name": "ckg.downstream_dependencies",
+        "description": "Files this file depends on — outgoing callees from its functions, transitively.",
         "inputSchema": {
             "type": "object",
             "required": ["repo_id", "path"],
@@ -175,8 +190,16 @@ def _dispatch_tool(name: str, args: dict[str, Any], principal: Principal) -> dic
             limit=int(args.get("limit", 200)),
             _=principal,  # type: ignore[arg-type]
         )
-    if name == "ckg.impact_radius":
-        return impact_radius(
+    if name == "ckg.blast_radius":
+        return blast_radius(
+            repo_id=args["repo_id"],
+            path=args["path"],
+            depth=int(args.get("depth", 2)),
+            limit=int(args.get("limit", 500)),
+            _=principal,  # type: ignore[arg-type]
+        )
+    if name == "ckg.downstream_dependencies":
+        return downstream_dependencies(
             repo_id=args["repo_id"],
             path=args["path"],
             depth=int(args.get("depth", 2)),

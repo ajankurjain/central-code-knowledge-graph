@@ -148,17 +148,40 @@ class Query:
         return [ImportEntry(name=r["name"], labels=r["labels"] or []) for r in rows]
 
     @strawberry.field
-    def impact_radius(
+    def blast_radius(
         self,
         repo_id: str,
         path: str,
         depth: int = 2,
         limit: int = 500,
     ) -> list[str]:
+        """Upstream callers — files affected by a change to `path`."""
+        cy = f"""
+            MATCH (src:File {{repo_id: $rid, path: $path}})
+            MATCH (src)-[:DEFINES]->(target:Function)<-[:CALLS*1..{max(1, min(depth, 4))}]-(caller:Function)
+            MATCH (caller_file:File)-[:DEFINES]->(caller)
+            WHERE caller_file <> src
+            RETURN DISTINCT caller_file.path AS path
+            LIMIT $limit
+        """
+        with neo_session() as s:
+            rows = s.run(cy, rid=repo_id, path=path, limit=limit).data()
+        return [r["path"] for r in rows]
+
+    @strawberry.field
+    def downstream_dependencies(
+        self,
+        repo_id: str,
+        path: str,
+        depth: int = 2,
+        limit: int = 500,
+    ) -> list[str]:
+        """Outgoing callees — files this file depends on."""
         cy = f"""
             MATCH (src:File {{repo_id: $rid, path: $path}})
             MATCH (src)-[:DEFINES]->(:Function)-[:CALLS*1..{max(1, min(depth, 4))}]->(target:Function)
             MATCH (target_file:File)-[:DEFINES]->(target)
+            WHERE target_file <> src
             RETURN DISTINCT target_file.path AS path
             LIMIT $limit
         """

@@ -73,9 +73,13 @@ export const api = {
     req<CallersResp>(
       `/v1/graph/callees_of${qs({ repo_id: repoId, qualified_name: qn, depth, limit })}`,
     ),
-  impact: (repoId: string, path: string, depth = 2, limit = 500) =>
-    req<{ source: string; depth: number; impacted_files: { path: string; language: string }[] }>(
-      `/v1/graph/impact_radius${qs({ repo_id: repoId, path, depth, limit })}`,
+  blastRadius: (repoId: string, path: string, depth = 2, limit = 500) =>
+    req<{ source: string; depth: number; affected_files: { path: string; language: string }[] }>(
+      `/v1/graph/blast_radius${qs({ repo_id: repoId, path, depth, limit })}`,
+    ),
+  downstreamDependencies: (repoId: string, path: string, depth = 2, limit = 500) =>
+    req<{ source: string; depth: number; dependency_files: { path: string; language: string }[] }>(
+      `/v1/graph/downstream_dependencies${qs({ repo_id: repoId, path, depth, limit })}`,
     ),
   fileOverview: (repoId: string, path: string) =>
     req<FileOverview>(`/v1/graph/file${qs({ repo_id: repoId, path })}`),

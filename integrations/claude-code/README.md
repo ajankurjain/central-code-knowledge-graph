@@ -50,7 +50,8 @@ Grep/Glob/Read** for code exploration:
 
 - `ckg.search_keyword` / `ckg.search_semantic` to locate functions
 - `ckg.callers_of` / `ckg.callees_of` for relationships
-- `ckg.impact_radius` for blast-radius analysis
+- `ckg.blast_radius` for "what breaks if I change this file?" (upstream callers)
+- `ckg.downstream_dependencies` for "what does this file depend on?" (outgoing callees)
 - `ckg.file_overview` for a file's symbol table
 
 Default `repo_id` is `<your-repo-slug>`.

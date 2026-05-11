@@ -7,7 +7,7 @@
 
 The REST surface is fine for one-shot queries but agents and the future web
 UI want to compose graph queries — "for these N functions, give me their
-callers + the files those callers live in + the impact radius of each". One
+callers + the files those callers live in + the blast radius of each". One
 GraphQL round-trip is cleaner than N REST round-trips.
 
 ## Decision
@@ -29,7 +29,8 @@ type Query {
   callersOf(repoId: String!, qualifiedName: String!, depth: Int = 1, limit: Int = 100): [FunctionRef!]!
   calleesOf(repoId: String!, qualifiedName: String!, depth: Int = 1, limit: Int = 100): [FunctionRef!]!
   importsOf(repoId: String!, path: String!, limit: Int = 200): [ImportEntry!]!
-  impactRadius(repoId: String!, path: String!, depth: Int = 2, limit: Int = 500): [String!]!
+  blastRadius(repoId: String!, path: String!, depth: Int = 2, limit: Int = 500): [String!]!
+  downstreamDependencies(repoId: String!, path: String!, depth: Int = 2, limit: Int = 500): [String!]!
   fileOverview(repoId: String!, path: String!): FileSymbols
   searchKeyword(q: String!, repoId: String, limit: Int = 25): [SearchHit!]!
   searchSemantic(q: String!, repoId: String, limit: Int = 10): [SearchHit!]!

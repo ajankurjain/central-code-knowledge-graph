@@ -1,7 +1,7 @@
 # Cursor Integration
 
 Cursor speaks the Model Context Protocol (MCP). Point it at the central
-knowledge graph server and it'll get tools for callers/callees, impact radius,
+knowledge graph server and it'll get tools for callers/callees, blast radius,
 keyword search, and semantic search.
 
 ## 1. Create an API token
@@ -51,7 +51,8 @@ You should see Cursor invoke the tool and return live numbers from your server.
 | `ckg.callers_of` | Functions that (transitively) call a given function. |
 | `ckg.callees_of` | Functions called by a given function. |
 | `ckg.imports_of` | Modules / files imported by a file. |
-| `ckg.impact_radius` | Files transitively affected by a change. |
+| `ckg.blast_radius` | Files affected if this file changes (upstream callers, transitive). |
+| `ckg.downstream_dependencies` | Files this file depends on (outgoing callees, transitive). |
 | `ckg.file_overview` | Classes + functions defined in a file. |
 | `ckg.search_keyword` | Lucene FTS on names + docs. |
 | `ckg.search_semantic` | Vector search over function embeddings. |

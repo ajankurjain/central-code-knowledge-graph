@@ -51,7 +51,8 @@ Scopes:
 - `GET /v1/graph/callers_of?repo_id=…&qualified_name=…&depth=1`
 - `GET /v1/graph/callees_of?repo_id=…&qualified_name=…&depth=1`
 - `GET /v1/graph/imports_of?repo_id=…&path=…`
-- `GET /v1/graph/impact_radius?repo_id=…&path=…&depth=2`
+- `GET /v1/graph/blast_radius?repo_id=…&path=…&depth=2` — files affected if this file changes (upstream callers).
+- `GET /v1/graph/downstream_dependencies?repo_id=…&path=…&depth=2` — files this file depends on (outgoing callees).
 - `GET /v1/graph/file?repo_id=…&path=…`
 
 ### Search
