@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { TokenGate } from "@/components/TokenGate";
@@ -10,6 +10,12 @@ import { FunctionGraph, type GraphLink, type GraphNode } from "@/components/Forc
 import { RepoPicker, RefreshButton } from "@/components/RepoPicker";
 import { api } from "@/lib/api";
 import type { Cluster, Warning } from "@/lib/types";
+
+// How long to keep polling the GET after a Recompute click before we conclude
+// the worker either succeeded-with-zero-clusters or silently died. The Louvain
+// + Cypher writes for a ~600-file repo finish in well under this.
+const ARCH_POLL_BUDGET_MS = 90_000;
+const ARCH_POLL_INTERVAL_MS = 2_500;
 
 export default function ArchitecturePage() {
   return (
@@ -27,12 +33,32 @@ export default function ArchitecturePage() {
   );
 }
 
+// Compute-state machine driven by Inner. ComputeButton triggers it; Content
+// reads it to decide whether to poll, show a banner, or render the map.
+type ComputeState =
+  | { kind: "idle" }
+  | { kind: "queueing" }                   // POST in flight
+  | { kind: "computing"; startedAt: number } // POST accepted, polling for clusters
+  | { kind: "timed_out"; startedAt: number } // polled past budget, never saw clusters
+  | { kind: "error"; message: string };
+
 function Inner() {
   const router = useRouter();
   const params = useSearchParams();
   const repo = params.get("repo") || "";
 
   const repos = useQuery({ queryKey: ["repos"], queryFn: api.repos });
+
+  // Compute state, owned here so the button and the content panel share it.
+  // Keyed on repoId so picking a different repo resets the machine.
+  const [computeState, setComputeState] = useState<ComputeState>({ kind: "idle" });
+  const lastRepoRef = useRef(repo);
+  useEffect(() => {
+    if (lastRepoRef.current !== repo) {
+      setComputeState({ kind: "idle" });
+      lastRepoRef.current = repo;
+    }
+  }, [repo]);
 
   function pickRepo(id: string) {
     const usp = new URLSearchParams(params.toString());
@@ -52,7 +78,13 @@ function Inner() {
           isFetching={repos.isFetching}
           dataUpdatedAt={repos.dataUpdatedAt}
         />
-        {repo && <ComputeButton repoId={repo} />}
+        {repo && (
+          <ComputeButton
+            repoId={repo}
+            state={computeState}
+            onState={setComputeState}
+          />
+        )}
       </div>
 
       {!repo && <p className="text-slate-400">Pick a repo to load its architecture map.</p>}
@@ -66,60 +98,160 @@ function Inner() {
           first, then come back and click <b>Recompute</b>.
         </div>
       )}
-      {repo && <Content repoId={repo} />}
+      {repo && (
+        <Content
+          repoId={repo}
+          computeState={computeState}
+          onComputeState={setComputeState}
+        />
+      )}
     </>
   );
 }
 
-function ComputeButton({ repoId }: { repoId: string }) {
-  const qc = useQueryClient();
+function ComputeButton({
+  repoId,
+  state,
+  onState,
+}: {
+  repoId: string;
+  state: ComputeState;
+  onState: (s: ComputeState) => void;
+}) {
   const mut = useMutation({
     mutationFn: () => api.computeArchitecture(repoId),
-    onSuccess: () => {
-      // Allow worker a moment, then refetch.
-      setTimeout(() => {
-        qc.invalidateQueries({ queryKey: ["arch", repoId] });
-        qc.invalidateQueries({ queryKey: ["arch-warnings", repoId] });
-      }, 1500);
-    },
+    onMutate: () => onState({ kind: "queueing" }),
+    onSuccess: () => onState({ kind: "computing", startedAt: Date.now() }),
+    onError: (err: Error) =>
+      onState({
+        kind: "error",
+        // Truncate so a 2 KB stack trace doesn't blow up the layout.
+        message: err.message.slice(0, 400),
+      }),
   });
+  const busy = state.kind === "queueing" || state.kind === "computing";
   return (
     <button
       onClick={() => mut.mutate()}
-      disabled={mut.isPending}
+      disabled={busy}
       className="rounded bg-violet-500 px-4 py-2 text-sm font-medium text-violet-50 disabled:opacity-50 hover:bg-violet-400"
     >
-      {mut.isPending ? "Queueing…" : "Recompute"}
+      {state.kind === "queueing" && "Queueing…"}
+      {state.kind === "computing" && "Computing…"}
+      {(state.kind === "idle" || state.kind === "timed_out" || state.kind === "error") &&
+        "Recompute"}
     </button>
   );
 }
 
-function Content({ repoId }: { repoId: string }) {
+function Content({
+  repoId,
+  computeState,
+  onComputeState,
+}: {
+  repoId: string;
+  computeState: ComputeState;
+  onComputeState: (s: ComputeState) => void;
+}) {
+  // Poll aggressively while we're waiting for the worker; the first non-empty
+  // response flips us out of `computing`. If nothing shows up within the
+  // budget we surface "timed out / produced no clusters" so the user isn't
+  // stranded on a screen that looks identical to "never ran".
+  const polling = computeState.kind === "computing";
   const arch = useQuery({
     queryKey: ["arch", repoId],
     queryFn: () => api.architecture(repoId),
+    refetchInterval: polling ? ARCH_POLL_INTERVAL_MS : false,
   });
   const warnings = useQuery({
     queryKey: ["arch-warnings", repoId],
     queryFn: () => api.architectureWarnings(repoId),
+    // Only refresh warnings after we have a map; otherwise we just hammer
+    // an endpoint that returns nothing.
+    enabled: (arch.data?.clusters.length ?? 0) > 0,
   });
 
-  if (arch.isLoading) return <Spinner />;
-  if (arch.error) return <p className="text-red-300">{(arch.error as Error).message}</p>;
-  if (!arch.data || arch.data.clusters.length === 0) {
-    return (
-      <p className="text-slate-400">
-        No architecture map yet. Click <b>Recompute</b> above — it'll run in the worker and the
-        page will refresh in a few seconds.
-      </p>
-    );
-  }
+  useEffect(() => {
+    if (computeState.kind !== "computing") return;
+    // Saw clusters land — done.
+    if ((arch.data?.clusters.length ?? 0) > 0) {
+      onComputeState({ kind: "idle" });
+      return;
+    }
+    // Past the budget without seeing anything — flip to timed_out so the UI
+    // explains what happened.
+    if (Date.now() - computeState.startedAt > ARCH_POLL_BUDGET_MS) {
+      onComputeState({ kind: "timed_out", startedAt: computeState.startedAt });
+    }
+  }, [arch.data, computeState, onComputeState]);
+
+  if (arch.isLoading && !arch.data) return <Spinner />;
+
+  const banner = (() => {
+    if (computeState.kind === "queueing") {
+      return (
+        <div className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+          Sending recompute request…
+        </div>
+      );
+    }
+    if (computeState.kind === "computing") {
+      const secs = Math.round((Date.now() - computeState.startedAt) / 1000);
+      return (
+        <div className="flex items-center gap-2 rounded border border-sky-800/60 bg-sky-950/30 px-3 py-2 text-sm text-sky-200">
+          <Spinner />
+          <span>
+            Computing architecture map — this can take ~30 s on big repos.{" "}
+            <span className="text-sky-400/80">({secs}s elapsed)</span>
+          </span>
+        </div>
+      );
+    }
+    if (computeState.kind === "error") {
+      return (
+        <div className="rounded border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+          Recompute failed: {computeState.message}
+        </div>
+      );
+    }
+    if (computeState.kind === "timed_out") {
+      return (
+        <div className="rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+          Recompute finished but produced no clusters. The repo's call / import
+          graph may be sparse (common for Java repos before LSP resolution is on,
+          and for repos whose languages aren't yet wired into the file-edge
+          extractor). Try running an incremental ingest, or check the worker
+          logs.
+        </div>
+      );
+    }
+    return null;
+  })();
+
+  const hasMap = arch.data && arch.data.clusters.length > 0;
 
   return (
-    <div className="space-y-8">
-      <ClusterMap data={arch.data.clusters} edges={arch.data.edges} />
-      <ClusterTable clusters={arch.data.clusters} />
-      <WarningsPanel warnings={warnings.data?.warnings ?? []} loading={warnings.isLoading} />
+    <div className="space-y-6">
+      {banner}
+      {arch.error && (
+        <p className="text-red-300">{(arch.error as Error).message}</p>
+      )}
+      {!hasMap && computeState.kind === "idle" && (
+        <p className="text-slate-400">
+          No architecture map yet. Click <b>Recompute</b> above — it'll run in
+          the worker and progress will show here while it's working.
+        </p>
+      )}
+      {hasMap && arch.data && (
+        <>
+          <ClusterMap data={arch.data.clusters} edges={arch.data.edges} />
+          <ClusterTable clusters={arch.data.clusters} />
+          <WarningsPanel
+            warnings={warnings.data?.warnings ?? []}
+            loading={warnings.isLoading}
+          />
+        </>
+      )}
     </div>
   );
 }
