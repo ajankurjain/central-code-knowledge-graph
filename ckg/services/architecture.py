@@ -611,6 +611,12 @@ def _write_clusters(
 def _write_warnings(repo_id: str, warnings: list[dict], computed_at: str) -> None:
     if not warnings:
         return
+    # Neo4j only allows primitive properties (or arrays of primitives) — a
+    # nested map like {"files": [...]} or {"cluster_id": 0, "files": [...]}
+    # rejects with a CypherTypeError. JSON-encode the detail payload so the
+    # full structure survives the round-trip; the read side decodes it back.
+    import json as _json
+
     rows = [
         {
             "kind": w["kind"],
@@ -618,7 +624,7 @@ def _write_warnings(repo_id: str, warnings: list[dict], computed_at: str) -> Non
             "target_kind": w["target_kind"],
             "target_id": w["target_id"],
             "message": w["message"],
-            "detail": w.get("detail") or {},
+            "detail_json": _json.dumps(w.get("detail") or {}, default=str),
         }
         for w in warnings
     ]
@@ -632,7 +638,7 @@ def _write_warnings(repo_id: str, warnings: list[dict], computed_at: str) -> Non
             })
               SET w.severity = row.severity,
                   w.message = row.message,
-                  w.detail = row.detail,
+                  w.detail_json = row.detail_json,
                   w.computed_at = $computed_at
             """,
             rid=repo_id, rows=rows, computed_at=computed_at,
@@ -701,13 +707,18 @@ def list_cluster_edges(repo_id: str) -> list[dict]:
 
 
 def list_warnings(repo_id: str, severity: str | None = None) -> list[dict]:
+    """Read warnings back, decoding the JSON-encoded `detail_json` property
+    so callers see the original nested-dict shape."""
+    import json as _json
+
     where = "WHERE w.severity = $sev" if severity else ""
     cy = f"""
         MATCH (w:Warning {{repo_id: $rid}})
         {where}
         RETURN w.kind AS kind, w.severity AS severity,
                w.target_kind AS target_kind, w.target_id AS target_id,
-               w.message AS message, w.detail AS detail,
+               w.message AS message,
+               w.detail_json AS detail_json,
                w.computed_at AS computed_at
         ORDER BY w.severity, w.kind, w.target_id
     """
@@ -715,4 +726,11 @@ def list_warnings(repo_id: str, severity: str | None = None) -> list[dict]:
     if severity:
         params["sev"] = severity
     with neo_session() as s:
-        return s.run(cy, **params).data()
+        rows = s.run(cy, **params).data()
+    for r in rows:
+        raw = r.pop("detail_json", None)
+        try:
+            r["detail"] = _json.loads(raw) if raw else {}
+        except Exception:
+            r["detail"] = {}
+    return rows
