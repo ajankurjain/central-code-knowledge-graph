@@ -113,6 +113,27 @@ function Inner() {
         </div>
       </div>
 
+      {/* Zero-state hint: traffic exists but none of it is AI-replaceable
+          (almost certainly the dashboard polling itself). Don't pretend
+          there are savings — explain instead. */}
+      {data.total_calls > 0 && data.tokens_saved === 0 && (
+        <div className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+          <p className="font-medium text-slate-100">No AI-agent traffic yet.</p>
+          <p className="mt-1 text-xs text-slate-400">
+            {data.total_calls.toLocaleString()} API call
+            {data.total_calls === 1 ? "" : "s"} in this window — all CRUD /
+            dashboard polling, none replacing source-reading by an AI.
+            Savings will appear once an MCP client, GraphQL query, or
+            graph-traversal endpoint (callers_of / blast_radius / search /
+            architecture) is hit. See{" "}
+            <a href="/integrations" className="text-violet-300 hover:underline">
+              Integrations
+            </a>{" "}
+            for the connection URLs.
+          </p>
+        </div>
+      )}
+
       {/* Headline tiles */}
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatsCard

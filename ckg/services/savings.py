@@ -38,7 +38,21 @@ from dataclasses import dataclass
 # ─── Heuristics ──────────────────────────────────────────────────────────────
 # Per-route baseline (tokens an agent would have read WITHOUT ckg) and
 # response (tokens ckg actually returns). Routes not listed default to
-# (0, 0) — admin/CRUD calls don't save anything for AI agents.
+# (0, 0) and therefore contribute nothing to the savings total.
+#
+# Inclusion criteria (deliberate, not a placeholder):
+#   1. A reasonable AI agent answering the user's question WITHOUT ckg
+#      would have had to ingest source text to answer it (grep + read
+#      files, walk imports, scan the tree).
+#   2. ckg replaces that with a small structured JSON answer.
+#
+# Endpoints used by the web UI itself (CRUD: /v1/repos, /v1/sources,
+# /v1/graph/stats, /v1/analytics/*, /v1/tokens, ingest mgmt, run
+# polling, webhook config, etc.) DO NOT meet (1) — they're API
+# bookkeeping, not work an AI agent would otherwise do — so they're
+# omitted on purpose. With only dashboard polling running, savings
+# should read $0 / 0 tokens; numbers only appear when real AI traffic
+# (MCP / graph traversal / search / architecture) hits the API.
 
 PER_ENDPOINT_TOKENS: dict[str, tuple[int, int]] = {
     # ── Graph traversal — the highest-leverage endpoints ─────────────
@@ -52,7 +66,6 @@ PER_ENDPOINT_TOKENS: dict[str, tuple[int, int]] = {
     "/v1/graph/imports_of":            ( 1_500,   200),
     "/v1/graph/file":                  ( 2_000,   300),
     "/v1/graph/entry_points":          (15_000,   600),
-    "/v1/graph/stats":                 (   500,   100),
 
     # ── Search ────────────────────────────────────────────────────────
     # Baseline: agent does grep + reads top-N hits (~10 files x 800).
@@ -72,14 +85,6 @@ PER_ENDPOINT_TOKENS: dict[str, tuple[int, int]] = {
 
     # ── GraphQL — composed traversals ────────────────────────────────
     "/v1/graphql":                     ( 6_000,   800),
-
-    # ── Repo + source listing — modest savings (cataloging vs cloning) ─
-    "/v1/repos":                       (   500,   200),
-    "/v1/repos/{repo_id}":             (   400,   150),
-    "/v1/repos/{repo_id}/runs":        (   400,   200),
-    "/v1/sources":                     (   400,   200),
-    "/v1/sources/{source_id}/repos":   (   500,   250),
-    "/v1/sources/{source_id}/progress":(   200,   100),
 }
 
 
@@ -196,21 +201,21 @@ def aggregate_savings(
 
 # Routes carry templated path parameters like `/v1/repos/{repo_id}`. The
 # `api_calls.route` column already stores the templated form (we set it
-# from `request.scope["route"].path` in the middleware), but if anything
-# slips through as a concrete path we collapse it back here so the
-# heuristic table still matches.
+# from `request.scope["route"].path` in the middleware). The fallback
+# here only collapses NUMERIC segments — pure ints are unambiguously
+# IDs, while alphanumeric segments (like `callers_of`, `entry_points`,
+# or even repo slugs like `policy-service`) could just as easily be
+# route names so we leave them alone. If the result still doesn't match
+# the heuristic table, that route doesn't contribute savings — which is
+# the right answer for unrecognised paths.
 _NUMERIC_SEGMENT = re.compile(r"/\d+(?=/|$)")
-_SLUG_SEGMENT = re.compile(r"/[A-Za-z0-9_\-.]{8,}(?=/|$)")
 
 
 def normalise_route(raw: str) -> str:
-    """Best-effort: collapse `/v1/repos/policy-service-foo` → `/v1/repos/{repo_id}`
-    so a concrete path matches the heuristic table. Conservative — only
-    rewrites segments that look like repo ids (slugs longer than 8
-    chars) or integer ids. Real templates pass through unchanged.
+    """Best-effort: collapse purely-numeric path segments back to
+    `{id}` so a concrete `/v1/sources/1/progress` matches the templated
+    form. Anything non-numeric passes through verbatim.
     """
     if "{" in raw:
         return raw
-    out = _NUMERIC_SEGMENT.sub("/{id}", raw)
-    out = _SLUG_SEGMENT.sub("/{repo_id}", out)
-    return out
+    return _NUMERIC_SEGMENT.sub("/{id}", raw)
