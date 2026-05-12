@@ -6,6 +6,12 @@ services:
     restart: unless-stopped
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:?neo4j password required}
+      # Also expose user + password as individual env vars so the healthcheck
+      # below can authenticate. The neo4j image only consumes NEO4J_AUTH at
+      # startup; without these the cypher-shell healthcheck sees empty
+      # credentials and the container loops in `unhealthy`.
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
       NEO4J_dbms_memory_heap_initial__size: 512m

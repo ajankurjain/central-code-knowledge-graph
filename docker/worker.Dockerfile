@@ -15,7 +15,7 @@ COPY pyproject.toml ./
 RUN pip install --upgrade pip setuptools wheel
 
 COPY ckg/__init__.py ckg/__init__.py
-RUN pip install -e .
+RUN pip install -e '.[server]'
 
 COPY ckg ./ckg
 

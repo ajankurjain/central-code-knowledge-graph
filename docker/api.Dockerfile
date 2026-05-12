@@ -16,7 +16,7 @@ RUN pip install --upgrade pip setuptools wheel
 
 # Install deps first for better layer caching
 COPY ckg/__init__.py ckg/__init__.py
-RUN pip install -e .
+RUN pip install -e '.[server]'
 
 # Now copy the rest of the source
 COPY ckg ./ckg
