@@ -16,9 +16,65 @@ export default function Dashboard() {
       <Navbar />
       <main className="mx-auto max-w-6xl px-5 py-8">
         <Stats />
+        <IntegrationsRow />
         <Repos />
       </main>
     </TokenGate>
+  );
+}
+
+// Quick-glance integration counts. Mirrors the headline metrics on
+// /integrations so the operator gets a status check straight from the
+// home page without losing the repos table below.
+function IntegrationsRow() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["integrations-summary"],
+    queryFn: api.integrationsSummary,
+    refetchInterval: 30_000,
+  });
+  if (isLoading || error || !data) return null;
+  const successRate = data.ingests.success_rate_pct;
+  const successTone =
+    successRate >= 90 ? "text-emerald-300" : successRate >= 60 ? "text-amber-300" : "text-rose-300";
+  return (
+    <section className="mb-8">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm uppercase tracking-wider text-slate-400">Integrations</h2>
+        <Link href="/integrations" className="text-xs text-violet-300 hover:underline">
+          Details →
+        </Link>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatsCard
+          label="Sources"
+          value={data.sources.total.toLocaleString()}
+          hint={`${data.sources.with_webhook} webhook${data.sources.with_webhook === 1 ? "" : "s"} · ${data.sources.with_schedule} scheduled`}
+        />
+        <StatsCard
+          label="API tokens"
+          value={data.tokens.active.toLocaleString()}
+          hint={`${data.tokens.used_in_last_24h} used in 24h`}
+        />
+        <StatsCard
+          label="Ingest 24h"
+          value={data.ingests.last_24h_total.toLocaleString()}
+          hint={
+            <span className={successTone}>
+              {successRate}% success · {data.ingests.queue_depth} queued
+            </span>
+          }
+        />
+        <StatsCard
+          label="Languages"
+          value={data.repos.by_language.length.toLocaleString()}
+          hint={
+            data.repos.by_language.length > 0
+              ? `top: ${data.repos.by_language.slice(0, 3).map((l) => l.key).join(", ")}`
+              : "none yet"
+          }
+        />
+      </div>
+    </section>
   );
 }
 

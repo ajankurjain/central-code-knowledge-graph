@@ -79,6 +79,54 @@ export type SourceRepo = {
   fork: boolean;
 };
 
+export type CountByKey = { key: string; value: number };
+
+export type IntegrationsSummary = {
+  sources: {
+    total: number;
+    by_kind: CountByKey[];
+    with_webhook: number;
+    with_schedule: number;
+    last_synced_at: string | null;
+  };
+  tokens: {
+    total: number;
+    active: number;
+    revoked: number;
+    used_in_last_24h: number;
+    most_recent_use: string | null;
+  };
+  repos: {
+    total: number;
+    indexed: number;
+    by_language: CountByKey[];
+    most_recent_index: string | null;
+  };
+  ingests: {
+    last_24h_total: number;
+    last_24h_success: number;
+    last_24h_failed: number;
+    success_rate_pct: number;
+    queue_depth: number;
+    recent_failures: { repo_id: string; error: string; finished_at: string | null }[];
+  };
+};
+
+export type ReadyzResp = {
+  ready: boolean;
+  checks: Record<string, boolean>;
+  version: string;
+};
+
+export type TokenInfo = {
+  id: number;
+  name: string;
+  scopes: string[];
+  created_at: string;
+  last_used_at: string | null;
+  revoked: boolean;
+};
+
 export type SourceProgress = {
   source_id: number;
   total: number;

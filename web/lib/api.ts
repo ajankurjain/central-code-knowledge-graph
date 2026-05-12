@@ -7,12 +7,15 @@ import type {
   CallersResp,
   FileOverview,
   IngestRun,
+  IntegrationsSummary,
   Repo,
+  ReadyzResp,
   SearchResp,
   Source,
   SourceProgress,
   SourceRepo,
   Stats,
+  TokenInfo,
   Warning,
 } from "./types";
 
@@ -53,9 +56,16 @@ function qs(params: Record<string, string | number | undefined | null>): string 
 }
 
 export const api = {
-  ready: () => req<{ ready: boolean; checks: Record<string, boolean>; version: string }>("/readyz"),
+  ready: () => req<ReadyzResp>("/readyz"),
 
   stats: () => req<Stats>("/v1/graph/stats"),
+
+  // Aggregated counts for the /integrations page + dashboard glance row.
+  // Cheap — one pass over a few small Postgres tables.
+  integrationsSummary: () => req<IntegrationsSummary>("/v1/analytics/summary"),
+
+  // Token management (admin-only).
+  tokens: () => req<TokenInfo[]>("/v1/tokens"),
 
   repos: () => req<Repo[]>("/v1/repos"),
   repo: (id: string) => req<Repo>(`/v1/repos/${encodeURIComponent(id)}`),
