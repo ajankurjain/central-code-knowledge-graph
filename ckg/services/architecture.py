@@ -353,10 +353,7 @@ def _directory_proximity_edges(paths: list[str]) -> list[tuple[str, str, int]]:
     for p in paths:
         # Group by the file's immediate parent directory. Files at the
         # repo root all live in "".
-        if "/" in p:
-            parent = p.rsplit("/", 1)[0]
-        else:
-            parent = ""
+        parent = p.rsplit("/", 1)[0] if "/" in p else ""
         by_dir[parent].append(p)
     edges: list[tuple[str, str, int]] = []
     for siblings in by_dir.values():
