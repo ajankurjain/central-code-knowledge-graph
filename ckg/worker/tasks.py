@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,6 +16,23 @@ from ckg.services.ingest import ingest_repo as _ingest_repo
 
 configure_logging(get_settings().log_level)
 log = get_logger(__name__)
+
+# Anything that looks like a credential MUST be stripped before we persist an
+# error message. `subprocess.CalledProcessError` echoes the full argv, so a
+# failed `git clone https://oauth2:glpat-…@host/path` would otherwise leak the
+# PAT into `ingest_runs.error`. Patterns cover:
+#   - `<scheme>://<user>:<password>@host` userinfo in URLs
+#   - bare provider PATs (GitHub `ghp_`/`gho_`/`ghs_`/`ghu_`, GitLab `glpat-`)
+_USERINFO_RE = re.compile(r"(https?://)[^/@\s]+:[^/@\s]+@")
+_PAT_RE = re.compile(r"\b(?:ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{20,}\b")
+_GLPAT_RE = re.compile(r"\bglpat-[A-Za-z0-9_\-.]{10,}\b")
+
+
+def _redact(text: str) -> str:
+    text = _USERINFO_RE.sub(r"\1***:***@", text)
+    text = _PAT_RE.sub("***", text)
+    text = _GLPAT_RE.sub("***", text)
+    return text
 
 
 @shared_task(name="ckg.ingest_repo", bind=True, max_retries=2)
@@ -63,7 +81,7 @@ def ingest_repo(self, repo_id: str, run_id: int, mode: str = "full") -> dict:
             if run is not None:
                 run.status = "failed"
                 run.finished_at = datetime.now(UTC)
-                run.error = str(exc)[:1900]
+                run.error = _redact(str(exc))[:1900]
                 s.commit()
         # Retry transient failures (network, etc.)
         raise self.retry(exc=exc, countdown=30) from exc

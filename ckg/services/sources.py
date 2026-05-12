@@ -357,5 +357,17 @@ def credentialed_clone_url_for_repo(repo_id: str) -> str | None:
         if not source or not source.auth_secret:
             return None
         token = decrypt(source.auth_secret)
-        provider = get_provider(source.kind)
+        try:
+            provider = get_provider(source.kind)
+        except ValueError:
+            # Source registered with a kind the current code doesn't know
+            # about (data → code drift, e.g. older worker missing a newer
+            # provider). Don't fail the clone — fall back to the generic
+            # host-aware token injector so private clones still have a
+            # chance instead of clone-with-no-auth on a private repo.
+            log.warning(
+                "source_kind_unknown_falling_back",
+                source_id=source.id, kind=source.kind,
+            )
+            return _inject_generic_token(repo.url, token)
         return provider.credentialed_clone_url(repo.url, token)

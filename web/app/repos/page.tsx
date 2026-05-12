@@ -6,7 +6,9 @@ import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { TokenGate } from "@/components/TokenGate";
 import { Spinner } from "@/components/Spinner";
+import { PaginationBar, SearchBox, usePaginatedList } from "@/components/Pagination";
 import { api } from "@/lib/api";
+import type { Repo } from "@/lib/types";
 
 export default function ReposPage() {
   return (
@@ -168,12 +170,31 @@ function RepoTable() {
     }
   }
 
+  const paged = usePaginatedList<Repo>(
+    data,
+    (r, q) =>
+      r.id.toLowerCase().includes(q) ||
+      (r.url ?? "").toLowerCase().includes(q) ||
+      (r.languages ?? []).some((l) => l.toLowerCase().includes(q)),
+    25,
+  );
+
   if (isLoading) return <Spinner />;
   if (error) return <p className="text-red-300">{(error as Error).message}</p>;
   if (!data?.length) return <p className="text-slate-400">No repositories yet.</p>;
 
   return (
     <div className="overflow-hidden rounded-lg border border-slate-800">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900/40 px-3 py-2">
+        <SearchBox
+          value={paged.query}
+          onChange={paged.setQuery}
+          placeholder="filter by id, url, or language…"
+        />
+        <span className="text-xs text-slate-500">
+          {paged.rawTotal.toLocaleString()} repositor{paged.rawTotal === 1 ? "y" : "ies"}
+        </span>
+      </div>
       <table className="w-full text-sm">
         <thead className="bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-400">
           <tr>
@@ -184,7 +205,7 @@ function RepoTable() {
           </tr>
         </thead>
         <tbody>
-          {data.map((r) => {
+          {paged.slice.map((r) => {
             const s = statuses[r.id] ?? { kind: "idle" };
             const busy = s.kind === "queueing";
             return (
@@ -238,6 +259,15 @@ function RepoTable() {
           })}
         </tbody>
       </table>
+      <PaginationBar
+        page={paged.page}
+        pageCount={paged.pageCount}
+        total={paged.total}
+        rawTotal={paged.rawTotal}
+        rangeStart={paged.rangeStart}
+        rangeEnd={paged.rangeEnd}
+        onPage={paged.setPage}
+      />
     </div>
   );
 }

@@ -6,7 +6,9 @@ import { Navbar } from "@/components/Navbar";
 import { TokenGate } from "@/components/TokenGate";
 import { StatsCard } from "@/components/StatsCard";
 import { Spinner } from "@/components/Spinner";
+import { PaginationBar, SearchBox, usePaginatedList } from "@/components/Pagination";
 import { api } from "@/lib/api";
+import type { Repo } from "@/lib/types";
 
 export default function Dashboard() {
   return (
@@ -41,6 +43,14 @@ function Stats() {
 
 function Repos() {
   const { data, isLoading, error, refetch } = useQuery({ queryKey: ["repos"], queryFn: api.repos });
+  const paged = usePaginatedList<Repo>(
+    data,
+    (r, q) =>
+      r.id.toLowerCase().includes(q) ||
+      (r.url ?? "").toLowerCase().includes(q) ||
+      (r.languages ?? []).some((l) => l.toLowerCase().includes(q)),
+    10,
+  );
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
@@ -66,6 +76,16 @@ function Repos() {
       )}
       {data && data.length > 0 && (
         <div className="overflow-hidden rounded-lg border border-slate-800">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900/40 px-3 py-2">
+            <SearchBox
+              value={paged.query}
+              onChange={paged.setQuery}
+              placeholder="filter by id, url, or language…"
+            />
+            <span className="text-xs text-slate-500">
+              {paged.rawTotal.toLocaleString()} repositor{paged.rawTotal === 1 ? "y" : "ies"}
+            </span>
+          </div>
           <table className="w-full text-sm">
             <thead className="bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-400">
               <tr>
@@ -76,7 +96,7 @@ function Repos() {
               </tr>
             </thead>
             <tbody>
-              {data.map((r) => (
+              {paged.slice.map((r) => (
                 <tr key={r.id} className="border-t border-slate-800 hover:bg-slate-900/60">
                   <td className="px-4 py-2 font-mono">
                     <Link href={`/repos/${encodeURIComponent(r.id)}`} className="text-violet-300 hover:underline">
@@ -92,6 +112,15 @@ function Repos() {
               ))}
             </tbody>
           </table>
+          <PaginationBar
+            page={paged.page}
+            pageCount={paged.pageCount}
+            total={paged.total}
+            rawTotal={paged.rawTotal}
+            rangeStart={paged.rangeStart}
+            rangeEnd={paged.rangeEnd}
+            onPage={paged.setPage}
+          />
         </div>
       )}
     </section>
