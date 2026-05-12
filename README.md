@@ -137,16 +137,33 @@ chmod 600 .env
 
 ### 3. Start the stack
 
-Make sure Docker Desktop is running first (`docker info` should succeed), then:
+Make sure Docker Desktop is running first (`docker info` should succeed),
+then pick one of two paths:
+
+**Fast path — pull pre-built images from GitHub Container Registry**
+(linux/amd64 + linux/arm64, signed with the release tag):
+
+```bash
+docker compose pull           # pulls api / worker / web from ghcr.io
+make up                       # starts the stack
+```
+
+Pin a specific release with `CKG_IMAGE_TAG=0.1.5 docker compose pull`;
+the default is `latest`. Browse all tags at
+[github.com/ajankurjain/central-code-knowledge-graph/pkgs/container/central-code-knowledge-graph%2Fapi](https://github.com/ajankurjain/central-code-knowledge-graph/pkgs/container/central-code-knowledge-graph%2Fapi).
+
+**Local-dev path — build from the checkout** (use this when you've
+edited code):
 
 ```bash
 make up
 # or: docker compose up -d --build
 ```
 
-**First boot takes 5–10 minutes** — it pulls ~2 GB of base images and builds
-the api / worker / web / beat images locally. Subsequent `make up` runs are
-~10 seconds.
+**First boot takes 5–10 minutes** when building locally — it pulls
+~2 GB of base images and builds the api / worker / web / beat images.
+Subsequent `make up` runs are ~10 seconds. The pre-built ghcr.io path
+skips the build phase entirely.
 
 Confirm everything came up healthy:
 

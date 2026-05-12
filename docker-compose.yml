@@ -60,6 +60,11 @@ services:
       retries: 10
 
   api:
+    # `image:` + `build:` together = compose pulls from ghcr.io if the
+    # image is available, otherwise builds locally. Set CKG_IMAGE_TAG to
+    # pin a release (e.g. `0.1.5`); defaults to `latest`. To force a
+    # local build use `docker compose build api`.
+    image: ghcr.io/ajankurjain/central-code-knowledge-graph/api:${CKG_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: docker/api.Dockerfile
@@ -86,6 +91,7 @@ services:
       start_period: 30s
 
   worker:
+    image: ghcr.io/ajankurjain/central-code-knowledge-graph/worker:${CKG_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: docker/worker.Dockerfile
@@ -106,6 +112,8 @@ services:
   beat:
     # Celery Beat — fires periodic scan tasks (sources due for sync,
     # repos due for poll). Only ONE beat instance should run per cluster.
+    # Reuses the worker image — same code, different command.
+    image: ghcr.io/ajankurjain/central-code-knowledge-graph/worker:${CKG_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: docker/worker.Dockerfile
@@ -121,6 +129,7 @@ services:
     command: ["celery", "-A", "ckg.worker.beat:celery_app", "beat", "--loglevel=INFO"]
 
   web:
+    image: ghcr.io/ajankurjain/central-code-knowledge-graph/web:${CKG_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: docker/web.Dockerfile
