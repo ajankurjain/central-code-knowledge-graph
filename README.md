@@ -18,7 +18,12 @@ AI coding tools re-read your entire codebase on every task. `ckg` fixes that. On
 
 </div>
 
+<details open>
+<summary>
+
 ## Screenshots
+
+</summary>
 
 ### Dashboard — graph counts, integration health, cost saving at a glance
 
@@ -32,7 +37,14 @@ AI coding tools re-read your entire codebase on every task. `ckg` fixes that. On
 
 ![Force-directed call graph: callers + callees around a target function](docs/screenshots/graph.png)
 
+</details>
+
+<details>
+<summary>
+
 ## What you get
+
+</summary>
 
 One server that:
 
@@ -47,7 +59,14 @@ One server that:
 - secures every endpoint with **scoped API tokens** (argon2id-hashed)
 - runs as a single `docker compose up`
 
+</details>
+
+<details>
+<summary>
+
 ## Why
+
+</summary>
 
 | Need | How this server delivers |
 |---|---|
@@ -65,7 +84,14 @@ One server that:
 | Neo4j-backed | Functions, classes, files, imports, calls all stored as labeled nodes + typed relationships |
 | Secure | API tokens with scopes (`admin`, `repo:write`, `repo:read`); hashed at rest |
 
+</details>
+
+<details>
+<summary>
+
 ## Supported languages
+
+</summary>
 
 **Tree-sitter parsers (23):** Python · JavaScript (incl. JSX → **React**) · TypeScript (incl. TSX → **Angular**) · Rust · Go · Java · Ruby · C · C++ · C# · Kotlin · Scala · Swift · PHP · Solidity · Dart · R · Perl · Lua · Zig · PowerShell · Julia · Nix
 
@@ -73,7 +99,14 @@ One server that:
 
 Pluggable — adding another language is one file under `ckg/parsers/` and one line in the registry.
 
+</details>
+
+<details>
+<summary>
+
 ## Architecture
+
+</summary>
 
 ```
                       ┌──────────────┐
@@ -108,7 +141,14 @@ Pluggable — adding another language is one file under `ckg/parsers/` and one l
 
 Full design rationale: [docs/adr/0001-architecture.md](docs/adr/0001-architecture.md).
 
+</details>
+
+<details>
+<summary>
+
 ## Quickstart
+
+</summary>
 
 ### 1. Prerequisites
 
@@ -412,7 +452,14 @@ Things that bit me during local setup — keep this open the first time you run.
 | Forgot which port is which | All ports are configurable via `.env` (`CKG_API_PORT`, `CKG_WEB_PORT`). Defaults: 8080 / 3000 / 7474 (Neo4j) / 5433 (Postgres) / 6379 (Redis). |
 | Run integration tests against the live stack | `docker compose exec api pytest tests/integration/ -q` (after `make up`). |
 
+</details>
+
+<details>
+<summary>
+
 ## What the graph looks like
+
+</summary>
 
 ```
 (Repo)-[:CONTAINS]->(File)-[:DEFINES]->(Class)-[:HAS_METHOD]->(Function)
@@ -424,7 +471,14 @@ Things that bit me during local setup — keep this open the first time you run.
 similarity. Names + docs feed Lucene full-text indexes. So one Cypher store
 answers all three styles of query (structural / keyword / semantic).
 
+</details>
+
+<details>
+<summary>
+
 ## API surface (short)
+
+</summary>
 
 Full reference: [docs/api.md](docs/api.md).
 
@@ -462,7 +516,14 @@ Full reference: [docs/api.md](docs/api.md).
 | `POST` | `/v1/mcp` | MCP JSON-RPC for IDEs |
 | `POST` | `/v1/graphql` | GraphQL endpoint (open in browser for GraphiQL UI) |
 
+</details>
+
+<details>
+<summary>
+
 ## Releases
+
+</summary>
 
 Current: **v0.1.6** on [PyPI](https://pypi.org/project/central-code-knowledge-graph/) ·
 full notes at [Releases](https://github.com/ajankurjain/central-code-knowledge-graph/releases).
@@ -485,7 +546,14 @@ pip install --upgrade central-code-knowledge-graph
 git pull && make build && make restart
 ```
 
+</details>
+
+<details>
+<summary>
+
 ## Roadmap
+
+</summary>
 
 - [x] **Phase 1** — Foundation, auth, Python/JS/TS ingest, REST + MCP, CLI
 - [x] **Phase 2** — Incremental updates (per-file sha diff), GraphQL endpoint, Rust/Go/Java/Ruby parsers
@@ -493,7 +561,14 @@ git pull && make build && make restart
 - [x] **Phase 4** — Next.js web UI: token login, dashboard, repo management, search (keyword + semantic), force-directed function call-graph viz
 - [ ] **Phase 5** — Multi-tenant orgs/users, k8s/Helm, OpenTelemetry, Neo4j Causal Cluster
 
+</details>
+
+<details>
+<summary>
+
 ## Development
+
+</summary>
 
 Backend:
 
@@ -532,7 +607,14 @@ integrations/   # cursor / vscode / claude-code MCP snippets
 tests/          # pytest
 ```
 
+</details>
+
+<details>
+<summary>
+
 ## Security
+
+</summary>
 
 - API tokens are 32-byte URL-safe random strings prefixed `ckg_`, **never**
   stored in plaintext — only argon2id hashes are persisted.
@@ -559,6 +641,15 @@ OpenAI key, AWS access key, Slack token, JWT, PEM private key):
 ln -sf ../../scripts/audit-secrets.sh .git/hooks/pre-commit
 ```
 
+</details>
+
+<details>
+<summary>
+
 ## License
 
+</summary>
+
 MIT — see [LICENSE](LICENSE).
+
+</details>
