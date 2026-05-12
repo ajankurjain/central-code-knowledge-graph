@@ -148,6 +148,59 @@ export type UsageSummary = {
   recent: ApiCallRow[];
 };
 
+export type SavingsModelOption = {
+  id: string;
+  label: string;
+  input_per_million_usd: number;
+  output_per_million_usd: number;
+  blended_per_million_usd: number;
+};
+
+export type SavingsRouteRow = {
+  route: string;
+  integration: "mcp" | "graphql" | "rest" | "other" | string;
+  calls: number;
+  tokens_saved: number;
+  dollars_saved: number;
+};
+
+export type SavingsTokenRow = {
+  token_id: number | null;
+  token_name: string;
+  calls: number;
+  tokens_saved: number;
+  dollars_saved: number;
+};
+
+export type SavingsBucketRow = {
+  integration: string;
+  calls: number;
+  tokens_saved: number;
+  dollars_saved: number;
+};
+
+export type SavingsDayPoint = {
+  day: string; // YYYY-MM-DD
+  tokens_saved: number;
+  dollars_saved: number;
+};
+
+export type SavingsSummary = {
+  model: SavingsModelOption;
+  window_hours: number;
+  total_calls: number;
+  total_calls_saving: number;
+  tokens_saved: number;
+  dollars_saved: number;
+  lifetime_tokens_saved: number;
+  lifetime_dollars_saved: number;
+  by_route: SavingsRouteRow[];
+  by_token: SavingsTokenRow[];
+  by_integration: SavingsBucketRow[];
+  daily: SavingsDayPoint[];
+  available_models: SavingsModelOption[];
+};
+
 export type ReadyzResp = {
   ready: boolean;
   checks: Record<string, boolean>;

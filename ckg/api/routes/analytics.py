@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select, text
 
@@ -23,6 +23,15 @@ from ckg.db.postgres import (
     IngestRun,
     Repo,
     get_sessionmaker,
+)
+from ckg.services.savings import (
+    MODELS,
+    aggregate_savings,
+    get_model,
+    integration_for_route,
+    list_models,
+    normalise_route,
+    tokens_saved_for_route,
 )
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -231,6 +240,269 @@ def usage(_: Principal = Depends(require_repo_read)) -> UsageSummary:
         top_endpoints=top_endpoints,
         recent=recent,
     )
+
+
+# ─── Savings ──────────────────────────────────────────────────────────────
+
+
+class ModelOption(BaseModel):
+    id: str
+    label: str
+    input_per_million_usd: float
+    output_per_million_usd: float
+    blended_per_million_usd: float
+
+
+class SavingsRouteRow(BaseModel):
+    route: str
+    integration: str  # mcp | graphql | rest | other
+    calls: int
+    tokens_saved: int
+    dollars_saved: float
+
+
+class SavingsTokenRow(BaseModel):
+    token_id: int | None
+    token_name: str
+    calls: int
+    tokens_saved: int
+    dollars_saved: float
+
+
+class SavingsBucketRow(BaseModel):
+    """Per-integration breakdown — mcp / graphql / rest."""
+
+    integration: str
+    calls: int
+    tokens_saved: int
+    dollars_saved: float
+
+
+class SavingsDayPoint(BaseModel):
+    day: str  # YYYY-MM-DD (UTC)
+    tokens_saved: int
+    dollars_saved: float
+
+
+class SavingsSummary(BaseModel):
+    """Heuristic cost-saving roll-up across all logged API calls.
+
+    Premise: every ckg call replaced "agent reads N files of source"
+    with "agent reads a small structured JSON response". The delta in
+    tokens, priced at the chosen model's per-token cost, surfaces as
+    dollars saved. See `ckg.services.savings` for the per-endpoint
+    baseline numbers.
+    """
+
+    model: ModelOption
+    window_hours: int
+    total_calls: int
+    total_calls_saving: int  # subset of total_calls that had a > 0 saving
+    tokens_saved: int
+    dollars_saved: float
+    lifetime_tokens_saved: int
+    lifetime_dollars_saved: float
+    by_route: list[SavingsRouteRow]
+    by_token: list[SavingsTokenRow]
+    by_integration: list[SavingsBucketRow]
+    daily: list[SavingsDayPoint]
+    available_models: list[ModelOption]
+
+
+def _model_option(m_id: str) -> ModelOption:
+    m = get_model(m_id)
+    return ModelOption(
+        id=m.id,
+        label=m.label,
+        input_per_million_usd=m.input_per_million_usd,
+        output_per_million_usd=m.output_per_million_usd,
+        blended_per_million_usd=round(m.blended_per_million_usd(), 4),
+    )
+
+
+@router.get("/savings", response_model=SavingsSummary)
+def savings(
+    model: str = Query(None, description="Model id from /v1/analytics/savings/models"),
+    window_hours: int = Query(24, ge=1, le=24 * 30),
+    _: Principal = Depends(require_repo_read),
+) -> SavingsSummary:
+    """Token + dollar savings rolled up from the request log.
+
+    `window_hours` controls every bucket EXCEPT `lifetime_*` and the
+    daily series — the daily series covers the same window so the UI
+    can render a 7- or 30-day chart by passing 168 or 720.
+    """
+    price = get_model(model)
+    dollars_per_token = price.dollars_per_token()
+    Session = get_sessionmaker()
+    now = datetime.now(UTC)
+    since = now - timedelta(hours=window_hours)
+
+    with Session() as s:
+        # Window per-route counts.
+        route_counts = s.execute(
+            text(
+                """
+                SELECT route, COUNT(*) AS calls
+                FROM api_calls
+                WHERE ts >= :since
+                GROUP BY route
+                """
+            ),
+            {"since": since},
+        ).all()
+        # Lifetime (everything in the log; pruned to 7d by the beat task).
+        lifetime_route_counts = s.execute(
+            text("SELECT route, COUNT(*) FROM api_calls GROUP BY route")
+        ).all()
+
+        # Per-token counts (window only — lifetime here would over-promise
+        # since old tokens may have been revoked).
+        token_route_rows = s.execute(
+            text(
+                """
+                SELECT token_id, COALESCE(token_name, 'anonymous') AS token_name,
+                       route, COUNT(*) AS calls
+                FROM api_calls
+                WHERE ts >= :since
+                GROUP BY token_id, token_name, route
+                """
+            ),
+            {"since": since},
+        ).all()
+
+        # Daily series — one row per UTC day in window with total saving.
+        daily_rows = s.execute(
+            text(
+                """
+                SELECT date_trunc('day', ts AT TIME ZONE 'UTC') AS day, route, COUNT(*) AS calls
+                FROM api_calls
+                WHERE ts >= :since
+                GROUP BY day, route
+                ORDER BY day ASC
+                """
+            ),
+            {"since": since},
+        ).all()
+
+    total_calls = sum(int(c) for _r, c in route_counts)
+
+    # Window totals + per-route breakdown.
+    window_total_tokens, route_savings = aggregate_savings(
+        (normalise_route(r), int(c)) for r, c in route_counts
+    )
+    window_total_dollars = window_total_tokens * dollars_per_token
+
+    lifetime_total_tokens, _ = aggregate_savings(
+        (normalise_route(r), int(c)) for r, c in lifetime_route_counts
+    )
+    lifetime_total_dollars = lifetime_total_tokens * dollars_per_token
+
+    by_route = [
+        SavingsRouteRow(
+            route=r.route,
+            integration=integration_for_route(r.route),
+            calls=r.calls,
+            tokens_saved=r.tokens_saved,
+            dollars_saved=round(r.tokens_saved * dollars_per_token, 4),
+        )
+        for r in route_savings[:15]
+    ]
+
+    # Per-token aggregation: sum savings across all routes for each token.
+    by_token_map: dict[
+        tuple[int | None, str], dict[str, int]
+    ] = {}
+    for row in token_route_rows:
+        per_call = tokens_saved_for_route(normalise_route(row.route))
+        if per_call <= 0:
+            continue
+        key = (row.token_id, row.token_name)
+        bucket = by_token_map.setdefault(key, {"calls": 0, "tokens": 0})
+        bucket["calls"] += int(row.calls)
+        bucket["tokens"] += per_call * int(row.calls)
+    by_token = sorted(
+        (
+            SavingsTokenRow(
+                token_id=tid,
+                token_name=tname,
+                calls=v["calls"],
+                tokens_saved=v["tokens"],
+                dollars_saved=round(v["tokens"] * dollars_per_token, 4),
+            )
+            for (tid, tname), v in by_token_map.items()
+        ),
+        key=lambda r: r.tokens_saved,
+        reverse=True,
+    )[:10]
+
+    # Per-integration: mcp / graphql / rest.
+    bucket_acc: dict[str, dict[str, int]] = {}
+    total_calls_saving = 0
+    for r in route_savings:
+        bucket = bucket_acc.setdefault(
+            integration_for_route(r.route),
+            {"calls": 0, "tokens": 0},
+        )
+        bucket["calls"] += r.calls
+        bucket["tokens"] += r.tokens_saved
+        total_calls_saving += r.calls
+    by_integration = sorted(
+        (
+            SavingsBucketRow(
+                integration=name,
+                calls=v["calls"],
+                tokens_saved=v["tokens"],
+                dollars_saved=round(v["tokens"] * dollars_per_token, 4),
+            )
+            for name, v in bucket_acc.items()
+        ),
+        key=lambda b: b.tokens_saved,
+        reverse=True,
+    )
+
+    # Daily series.
+    daily_acc: dict[str, int] = {}
+    for row in daily_rows:
+        per_call = tokens_saved_for_route(normalise_route(row.route))
+        if per_call <= 0:
+            continue
+        day_key = row.day.strftime("%Y-%m-%d") if hasattr(row.day, "strftime") else str(row.day)[:10]
+        daily_acc[day_key] = daily_acc.get(day_key, 0) + per_call * int(row.calls)
+    daily = [
+        SavingsDayPoint(
+            day=day,
+            tokens_saved=tokens,
+            dollars_saved=round(tokens * dollars_per_token, 4),
+        )
+        for day, tokens in sorted(daily_acc.items())
+    ]
+
+    return SavingsSummary(
+        model=_model_option(price.id),
+        window_hours=window_hours,
+        total_calls=total_calls,
+        total_calls_saving=total_calls_saving,
+        tokens_saved=window_total_tokens,
+        dollars_saved=round(window_total_dollars, 2),
+        lifetime_tokens_saved=lifetime_total_tokens,
+        lifetime_dollars_saved=round(lifetime_total_dollars, 2),
+        by_route=by_route,
+        by_token=by_token,
+        by_integration=by_integration,
+        daily=daily,
+        available_models=[_model_option(m_id) for m_id in MODELS],
+    )
+
+
+@router.get("/savings/models", response_model=list[ModelOption])
+def savings_models(_: Principal = Depends(require_repo_read)) -> list[ModelOption]:
+    """Catalog of model price cards. Useful for clients that just want
+    to render a model picker without pulling the full savings payload."""
+    return [_model_option(m.id) for m in list_models()]
+
+
+# ─── Integrations summary ─────────────────────────────────────────────────
 
 
 @router.get("/summary", response_model=IntegrationsSummary)

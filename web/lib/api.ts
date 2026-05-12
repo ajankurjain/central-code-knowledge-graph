@@ -10,6 +10,7 @@ import type {
   IntegrationsSummary,
   Repo,
   ReadyzResp,
+  SavingsSummary,
   SearchResp,
   Source,
   SourceProgress,
@@ -65,6 +66,15 @@ export const api = {
   // Cheap — one pass over a few small Postgres tables.
   integrationsSummary: () => req<IntegrationsSummary>("/v1/analytics/summary"),
   usageSummary: () => req<UsageSummary>("/v1/analytics/usage"),
+  // Heuristic token + dollar savings from the request log. `windowHours`
+  // defaults to 24 server-side; pass a multiple of 24 for a longer chart.
+  savingsSummary: (opts?: { model?: string; windowHours?: number }) =>
+    req<SavingsSummary>(
+      `/v1/analytics/savings${qs({
+        model: opts?.model,
+        window_hours: opts?.windowHours,
+      })}`,
+    ),
 
   // Token management (admin-only).
   tokens: () => req<TokenInfo[]>("/v1/tokens"),

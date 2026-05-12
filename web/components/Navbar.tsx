@@ -9,6 +9,7 @@ const items = [
   { href: "/repos", label: "Repos" },
   { href: "/sources", label: "Sources" },
   { href: "/integrations", label: "Integrations" },
+  { href: "/savings", label: "Cost saving" },
   { href: "/search", label: "Search" },
   { href: "/graph", label: "Graph" },
   { href: "/arch", label: "Architecture" },

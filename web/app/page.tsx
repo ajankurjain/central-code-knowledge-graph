@@ -17,10 +17,87 @@ export default function Dashboard() {
       <main className="mx-auto max-w-6xl px-5 py-8">
         <Stats />
         <IntegrationsRow />
+        <CostSavingRow />
         <Repos />
       </main>
     </TokenGate>
   );
+}
+
+// Quick-glance savings tiles. Renders the headline numbers from the
+// dedicated /savings page so the operator sees the dollar impact without
+// clicking through. Returns null while data is loading or empty so it
+// doesn't push the repos table down on a fresh install.
+function CostSavingRow() {
+  const { data } = useQuery({
+    queryKey: ["savings-summary", 24, "default"],
+    queryFn: () => api.savingsSummary({ windowHours: 24 }),
+    refetchInterval: 60_000,
+  });
+  if (!data) return null;
+  const topIntegration = data.by_integration[0];
+  const topToken = data.by_token[0];
+  return (
+    <section className="mb-8">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm uppercase tracking-wider text-slate-400">
+          Cost saving
+        </h2>
+        <Link href="/savings" className="text-xs text-violet-300 hover:underline">
+          Details →
+        </Link>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatsCard
+          label="Saved · 24h"
+          value={fmtUsd(data.dollars_saved)}
+          hint={
+            <span className="text-emerald-300">
+              {fmtTokens(data.tokens_saved)} tokens
+            </span>
+          }
+        />
+        <StatsCard
+          label="Lifetime saved"
+          value={fmtUsd(data.lifetime_dollars_saved)}
+          hint={`${fmtTokens(data.lifetime_tokens_saved)} tokens`}
+        />
+        <StatsCard
+          label="Top integration"
+          value={topIntegration ? topIntegration.integration.toUpperCase() : "—"}
+          hint={
+            topIntegration
+              ? `${fmtUsd(topIntegration.dollars_saved)} · ${topIntegration.calls.toLocaleString()} calls`
+              : "no traffic yet"
+          }
+        />
+        <StatsCard
+          label="Top team"
+          value={topToken ? topToken.token_name : "—"}
+          hint={
+            topToken
+              ? `${fmtUsd(topToken.dollars_saved)} saved`
+              : `priced at ${data.model.label}`
+          }
+        />
+      </div>
+    </section>
+  );
+}
+
+// Local formatters mirrored from /savings/page.tsx — keeping them inline
+// avoids pulling the whole page into the dashboard bundle just for two
+// helpers.
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString();
+}
+function fmtUsd(n: number): string {
+  if (n >= 100) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  if (n >= 0.01) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(4)}`;
 }
 
 // Quick-glance integration counts. Mirrors the headline metrics on
