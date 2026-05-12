@@ -6,7 +6,7 @@
 
 AI coding tools re-read your entire codebase on every task. `ckg` fixes that. One server indexes every repo in your org with [Tree-sitter](https://tree-sitter.github.io/) across 26 languages, stores the structural map as a [Neo4j](https://neo4j.com/) property graph, keeps it fresh via incremental ingest + webhooks, and serves precise context to your AI assistant via [MCP](https://modelcontextprotocol.io/) so it reads only what matters.
 
-[![PyPI](https://img.shields.io/pypi/v/central-code-knowledge-graph?label=pypi&color=blue&cacheSeconds=60)](https://pypi.org/project/central-code-knowledge-graph/)
+[![PyPI](https://img.shields.io/pypi/v/central-code-knowledge-graph?label=pypi&color=2563eb&cacheSeconds=90)](https://pypi.org/project/central-code-knowledge-graph/)
 [![CI](https://github.com/ajankurjain/central-code-knowledge-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/ajankurjain/central-code-knowledge-graph/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](pyproject.toml)
@@ -159,7 +159,7 @@ Health check from outside:
 
 ```bash
 curl http://localhost:8080/readyz
-# {"ready":true,"checks":{"neo4j":true,"postgres":true,"redis":true},"version":"0.1.1"}
+# {"ready":true,"checks":{"neo4j":true,"postgres":true,"redis":true},"version":"0.1.2"}
 ```
 
 URLs:
@@ -393,6 +393,25 @@ Full reference: [docs/api.md](docs/api.md).
 | `GET` | `/v1/search/semantic` | Vector cosine |
 | `POST` | `/v1/mcp` | MCP JSON-RPC for IDEs |
 | `POST` | `/v1/graphql` | GraphQL endpoint (open in browser for GraphiQL UI) |
+
+## Releases
+
+Current: **v0.1.2** on [PyPI](https://pypi.org/project/central-code-knowledge-graph/) ·
+full notes at [Releases](https://github.com/ajankurjain/central-code-knowledge-graph/releases).
+
+| Version | Highlights |
+|---|---|
+| **v0.1.2** | Per-repo PAT for cloning private repos (`POST /v1/repos {token}` + `PUT …/credentials` + Credentials panel in the web UI + `ckg repo register --token` / `ckg repo credentials`). Idempotent `ADD COLUMN IF NOT EXISTS` migration so existing installs pick up new columns on restart. Per-row ingest feedback on the /repos page. Runs-table error column now collapsible with full text. Web register form auto-slugifies with live preview. `tree-sitter>=0.24,<0.25` (csharp grammar v15). |
+| **v0.1.1** | Live-verified runtime fixes: Dockerfile installs `[server]` extras so `celery` is on the worker's PATH; Neo4j healthcheck creds exposed via `CKG_HEALTHCHECK_*` (was conflicting with Neo4j's `NEO4J_*`-as-setting parsing); strawberry-graphql `graphql_ide=` arg compatibility; `tree-sitter-language-pack` pinned to the 0.x line where the parser objects still expose `.parse()`. |
+| **v0.1.0** | Initial release. |
+
+Upgrade:
+
+```bash
+pip install --upgrade central-code-knowledge-graph
+# or, in a Docker checkout:
+git pull && make build && make restart
+```
 
 ## Roadmap
 
