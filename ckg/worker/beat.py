@@ -21,5 +21,11 @@ celery_app.conf.beat_schedule = {
         "task": "ckg.scan_repos_for_poll",
         "schedule": schedule(run_every=60.0),
     },
+    # Re-publishes orphaned `queued` rows and reaps zombie `running` rows.
+    # Cheap (two indexed scans), idempotent — see the docstring on the task.
+    "reconcile-stuck-ingests": {
+        "task": "ckg.reconcile_stuck_ingests",
+        "schedule": schedule(run_every=60.0),
+    },
 }
 celery_app.conf.timezone = "UTC"
