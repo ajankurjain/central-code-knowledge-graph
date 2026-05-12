@@ -18,6 +18,22 @@ AI coding tools re-read your entire codebase on every task. `ckg` fixes that. On
 
 </div>
 
+## Screenshots
+
+### Dashboard — graph counts, integration health, cost saving at a glance
+
+![Dashboard with Graph / Integrations / Cost Saving rows](docs/screenshots/dashboard.png)
+
+### Cost saving — token + dollar impact per agent, per endpoint
+
+![Cost-saving page with 24h / 7d / 30d window, daily bar chart, per-team and per-endpoint breakdowns](docs/screenshots/cost-saving.png)
+
+### Graph — interactive call-graph for any function
+
+![Force-directed call graph: callers + callees around a target function](docs/screenshots/graph.png)
+
+## What you get
+
 One server that:
 
 - ingests many repositories (not just one) and keeps them incrementally fresh
