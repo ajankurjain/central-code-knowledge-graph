@@ -6,6 +6,7 @@ import { Navbar } from "@/components/Navbar";
 import { TokenGate } from "@/components/TokenGate";
 import { Spinner } from "@/components/Spinner";
 import { api } from "@/lib/api";
+import type { SourceProgress } from "@/lib/types";
 
 export default function SourcesPage() {
   return (
@@ -135,68 +136,161 @@ function SourceTable() {
             <th className="px-4 py-2">id</th>
             <th className="px-4 py-2">kind</th>
             <th className="px-4 py-2">name</th>
-            <th className="px-4 py-2 text-right">repos</th>
             <th className="px-4 py-2">token</th>
-            <th className="px-4 py-2">last synced</th>
-            <th className="px-4 py-2">last sync</th>
+            <th className="px-4 py-2 w-[34%]">progress</th>
             <th className="px-4 py-2 text-right">actions</th>
           </tr>
         </thead>
         <tbody>
-          {data.map((s) => {
-            const stats = (s.last_sync_stats || {}) as Record<string, number | string[]>;
-            return (
-              <tr key={s.id} className="border-t border-slate-800">
-                <td className="px-4 py-2 font-mono">{s.id}</td>
-                <td className="px-4 py-2 text-slate-300">{s.kind}</td>
-                <td className="px-4 py-2 font-mono">{s.name}</td>
-                <td className="px-4 py-2 text-right font-mono">{s.repos}</td>
-                <td className="px-4 py-2">{s.has_token ? "✓" : "—"}</td>
-                <td className="px-4 py-2 text-slate-400">{s.last_synced_at ?? "—"}</td>
-                <td className="px-4 py-2 text-slate-300">
-                  {typeof stats.discovered === "number" ? (
-                    <>
-                      {stats.discovered} discovered, {stats.added as number} added,{" "}
-                      {stats.queued as number} queued
-                      {Array.isArray(stats.errors) && stats.errors.length > 0 ? (
-                        <span className="ml-2 text-red-300">
-                          ({stats.errors.length} errors)
-                        </span>
-                      ) : null}
-                    </>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <button
-                    onClick={() => sync.mutate(s.id)}
-                    disabled={sync.isPending}
-                    className="mr-2 rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800"
-                  >
-                    sync
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (
-                        confirm(
-                          `Delete source ${s.id} AND every repo it created (+ graph data)?`,
-                        )
-                      ) {
-                        del.mutate(s.id);
-                      }
-                    }}
-                    disabled={del.isPending}
-                    className="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
-                  >
-                    delete
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
+          {data.map((s) => (
+            <tr key={s.id} className="border-t border-slate-800 align-top">
+              <td className="px-4 py-3 font-mono">{s.id}</td>
+              <td className="px-4 py-3 text-slate-300">{s.kind}</td>
+              <td className="px-4 py-3 font-mono">{s.name}</td>
+              <td className="px-4 py-3">{s.has_token ? "✓" : "—"}</td>
+              <td className="px-4 py-3">
+                <ProgressCell sourceId={s.id} fallbackTotal={s.repos} />
+              </td>
+              <td className="px-4 py-3 text-right whitespace-nowrap">
+                <button
+                  onClick={() => sync.mutate(s.id)}
+                  disabled={sync.isPending}
+                  className="mr-2 rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800"
+                >
+                  {sync.isPending && sync.variables === s.id ? "syncing…" : "sync"}
+                </button>
+                <button
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Delete source ${s.id} AND every repo it created (+ graph data)?`,
+                      )
+                    ) {
+                      del.mutate(s.id);
+                    }
+                  }}
+                  disabled={del.isPending}
+                  className="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
+                >
+                  delete
+                </button>
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
   );
 }
+
+// Live progress bar per source. Polls /progress every 5s while there's any
+// queued or running run, slows to 30s once everything is settled so we
+// aren't hammering the API on idle pages.
+function ProgressCell({ sourceId, fallbackTotal }: { sourceId: number; fallbackTotal: number }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["source-progress", sourceId],
+    queryFn: () => api.sourceProgress(sourceId),
+    refetchInterval: (q) => {
+      const p = q.state.data as SourceProgress | undefined;
+      return p?.in_progress ? 5000 : 30000;
+    },
+    refetchOnWindowFocus: true,
+  });
+
+  if (isLoading) {
+    return <div className="text-xs text-slate-500">loading…</div>;
+  }
+  if (error || !data) {
+    return (
+      <div className="text-xs text-slate-500">
+        {fallbackTotal} repos · progress unavailable
+      </div>
+    );
+  }
+
+  const { total, indexed, queued, running, success, failed, in_progress, last_run_at, last_synced_at } = data;
+  const denom = total || 1;
+  const pctIndexed = Math.round((indexed / denom) * 100);
+  const pctFailed = Math.round((failed / denom) * 100);
+  const pctRunning = Math.round((running / denom) * 100);
+
+  return (
+    <div className="space-y-1.5">
+      {/* Segmented bar. Order matters — indexed (green) | running (blue,
+          pulsing) | failed (red) | remainder (slate). */}
+      <div className="flex h-2 w-full overflow-hidden rounded bg-slate-800" title={`${indexed}/${total} indexed`}>
+        {indexed > 0 && (
+          <div className="h-full bg-emerald-500" style={{ width: `${pctIndexed}%` }} />
+        )}
+        {running > 0 && (
+          <div
+            className="h-full animate-pulse bg-sky-500"
+            style={{ width: `${Math.max(2, pctRunning)}%` }}
+          />
+        )}
+        {failed > 0 && (
+          <div className="h-full bg-rose-500" style={{ width: `${pctFailed}%` }} />
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="font-mono text-emerald-300">
+          {indexed.toLocaleString()} / {total.toLocaleString()} indexed
+        </span>
+        {running > 0 && (
+          <span className="font-mono text-sky-300">⟳ {running} running</span>
+        )}
+        {queued > 0 && (
+          <span className="font-mono text-slate-300">{queued} queued</span>
+        )}
+        {success > 0 && success !== indexed && (
+          <span className="font-mono text-slate-400">{success} succeeded</span>
+        )}
+        {failed > 0 && (
+          <span className="font-mono text-rose-300">{failed} failed</span>
+        )}
+      </div>
+      <div className="text-[11px] text-slate-500">
+        {in_progress ? (
+          <span className="text-sky-300">sync in progress —</span>
+        ) : (
+          <span>idle —</span>
+        )}{" "}
+        last sync {fmtTs(last_synced_at)}
+        {last_run_at && last_run_at !== last_synced_at && (
+          <>
+            {" · "}last ingest {fmtTs(last_run_at)}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Render a timestamp as "2 min ago · 14:32:11" so the user has both relative
+// (at-a-glance) and absolute (for cross-referencing logs) context. Re-renders
+// every 30 s so the "ago" stays fresh without an extra query.
+function fmtTs(iso: string | null | undefined): string {
+  if (!iso) return "never";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const diff = Date.now() - d.getTime();
+  const ago = relative(diff);
+  // Local time, second precision.
+  const hh = d.getHours().toString().padStart(2, "0");
+  const mm = d.getMinutes().toString().padStart(2, "0");
+  const ss = d.getSeconds().toString().padStart(2, "0");
+  return `${ago} · ${hh}:${mm}:${ss}`;
+}
+
+function relative(ms: number): string {
+  if (ms < 0) return "just now";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+

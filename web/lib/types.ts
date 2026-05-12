@@ -79,6 +79,20 @@ export type SourceRepo = {
   fork: boolean;
 };
 
+export type SourceProgress = {
+  source_id: number;
+  total: number;
+  indexed: number;
+  queued: number;
+  running: number;
+  success: number;
+  failed: number;
+  unstarted: number;
+  in_progress: boolean;
+  last_run_at: string | null;
+  last_synced_at: string | null;
+};
+
 export type Cluster = {
   id: number;
   name: string;

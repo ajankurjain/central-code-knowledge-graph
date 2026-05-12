@@ -10,6 +10,7 @@ import type {
   Repo,
   SearchResp,
   Source,
+  SourceProgress,
   SourceRepo,
   Stats,
   Warning,
@@ -104,6 +105,7 @@ export const api = {
   sources: () => req<Source[]>("/v1/sources"),
   source: (id: number) => req<Source>(`/v1/sources/${id}`),
   sourceRepos: (id: number) => req<SourceRepo[]>(`/v1/sources/${id}/repos`),
+  sourceProgress: (id: number) => req<SourceProgress>(`/v1/sources/${id}/progress`),
   createSource: (body: {
     url: string;
     token?: string;

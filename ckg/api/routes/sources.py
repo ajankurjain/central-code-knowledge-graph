@@ -6,10 +6,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from ckg.auth import Principal, require_admin, require_repo_read, require_repo_write
-from ckg.db.postgres import BulkSource, SourceRepo, get_sessionmaker
+from ckg.db.postgres import BulkSource, Repo, SourceRepo, get_sessionmaker
 from ckg.services import webhooks as wh
 from ckg.services.sources import (
     CreateSourceInput,
@@ -80,6 +80,28 @@ class SourceRepoOut(BaseModel):
     private: bool
     archived: bool
     fork: bool
+
+
+class SourceProgress(BaseModel):
+    """Live ingest progress for every repo this source produced.
+
+    Counts are computed from the LATEST `ingest_runs` row per repo plus the
+    `repos.last_indexed_at` flag — so a repo whose latest run failed but was
+    indexed previously still counts as `indexed`. UI uses this to render a
+    progress bar that auto-refreshes while `in_progress` is true.
+    """
+
+    source_id: int
+    total: int
+    indexed: int
+    queued: int
+    running: int
+    success: int
+    failed: int
+    unstarted: int
+    in_progress: bool
+    last_run_at: datetime | None
+    last_synced_at: datetime | None
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -192,6 +214,83 @@ def list_source_repos(source_id: int, _: Principal = Depends(require_repo_read))
             )
             for r in rows
         ]
+
+
+@router.get("/{source_id}/progress", response_model=SourceProgress)
+def source_progress(
+    source_id: int,
+    _: Principal = Depends(require_repo_read),
+) -> SourceProgress:
+    """Aggregate ingest progress for every repo this source produced.
+
+    Polled by the UI while a sync is in flight. Cheap: one indexed
+    aggregation over `ingest_runs` plus a count over `repos`.
+    """
+    Session = get_sessionmaker()
+    with Session() as s:
+        source = s.get(BulkSource, source_id)
+        if not source:
+            raise HTTPException(404, "source not found")
+
+        # Total + indexed counts from the canonical `repos` table — this is
+        # the source of truth for "has this repo ever been indexed".
+        total = s.execute(
+            select(Repo).where(Repo.source_id == source_id)
+        ).scalars().all()
+        total_count = len(total)
+        indexed_count = sum(1 for r in total if r.last_indexed_at is not None)
+
+        # Latest run per repo (status snapshot). `DISTINCT ON` keeps Postgres
+        # happy on a single index scan over (repo_id, id DESC).
+        latest_rows = s.execute(
+            text(
+                """
+                SELECT DISTINCT ON (ir.repo_id)
+                    ir.repo_id,
+                    ir.status,
+                    ir.started_at,
+                    ir.finished_at
+                FROM ingest_runs ir
+                JOIN repos r ON r.id = ir.repo_id
+                WHERE r.source_id = :sid
+                ORDER BY ir.repo_id, ir.id DESC
+                """
+            ),
+            {"sid": source_id},
+        ).all()
+
+        queued = running = success = failed = 0
+        last_run_at: datetime | None = None
+        for row in latest_rows:
+            status_ = row.status
+            if status_ == "queued":
+                queued += 1
+            elif status_ == "running":
+                running += 1
+            elif status_ == "success":
+                success += 1
+            elif status_ == "failed":
+                failed += 1
+            ts = row.finished_at or row.started_at
+            if ts is not None and (last_run_at is None or ts > last_run_at):
+                last_run_at = ts
+
+        unstarted = max(0, total_count - len(latest_rows))
+        in_progress = queued > 0 or running > 0
+
+        return SourceProgress(
+            source_id=source_id,
+            total=total_count,
+            indexed=indexed_count,
+            queued=queued,
+            running=running,
+            success=success,
+            failed=failed,
+            unstarted=unstarted,
+            in_progress=in_progress,
+            last_run_at=last_run_at,
+            last_synced_at=source.last_synced_at,
+        )
 
 
 @router.post("/{source_id}/sync")
