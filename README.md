@@ -18,8 +18,10 @@ AI coding tools re-read your entire codebase on every task. `ckg` fixes that. On
 
 </div>
 
+## Screenshots
+
 <details open>
-<summary><h2 id="screenshots">Screenshots</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 ### Dashboard — graph counts, integration health, cost saving at a glance
 
@@ -35,8 +37,10 @@ AI coding tools re-read your entire codebase on every task. `ckg` fixes that. On
 
 </details>
 
+## What you get
+
 <details>
-<summary><h2 id="what-you-get">What you get</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 One server that:
 
@@ -53,8 +57,10 @@ One server that:
 
 </details>
 
+## Why
+
 <details>
-<summary><h2 id="why">Why</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 | Need | How this server delivers |
 |---|---|
@@ -74,8 +80,10 @@ One server that:
 
 </details>
 
+## Supported languages
+
 <details>
-<summary><h2 id="supported-languages">Supported languages</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 **Tree-sitter parsers (23):** Python · JavaScript (incl. JSX → **React**) · TypeScript (incl. TSX → **Angular**) · Rust · Go · Java · Ruby · C · C++ · C# · Kotlin · Scala · Swift · PHP · Solidity · Dart · R · Perl · Lua · Zig · PowerShell · Julia · Nix
 
@@ -85,8 +93,10 @@ Pluggable — adding another language is one file under `ckg/parsers/` and one l
 
 </details>
 
+## Architecture
+
 <details>
-<summary><h2 id="architecture">Architecture</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 ```
                       ┌──────────────┐
@@ -123,8 +133,10 @@ Full design rationale: [docs/adr/0001-architecture.md](docs/adr/0001-architectur
 
 </details>
 
+## Quickstart
+
 <details>
-<summary><h2 id="quickstart">Quickstart</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 ### 1. Prerequisites
 
@@ -430,8 +442,10 @@ Things that bit me during local setup — keep this open the first time you run.
 
 </details>
 
+## What the graph looks like
+
 <details>
-<summary><h2 id="what-the-graph-looks-like">What the graph looks like</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 ```
 (Repo)-[:CONTAINS]->(File)-[:DEFINES]->(Class)-[:HAS_METHOD]->(Function)
@@ -445,8 +459,10 @@ answers all three styles of query (structural / keyword / semantic).
 
 </details>
 
+## API surface (short)
+
 <details>
-<summary><h2 id="api-surface-short">API surface (short)</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 Full reference: [docs/api.md](docs/api.md).
 
@@ -486,8 +502,10 @@ Full reference: [docs/api.md](docs/api.md).
 
 </details>
 
+## Releases
+
 <details>
-<summary><h2 id="releases">Releases</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 Current: **v0.1.6** on [PyPI](https://pypi.org/project/central-code-knowledge-graph/) ·
 full notes at [Releases](https://github.com/ajankurjain/central-code-knowledge-graph/releases).
@@ -512,8 +530,10 @@ git pull && make build && make restart
 
 </details>
 
+## Roadmap
+
 <details>
-<summary><h2 id="roadmap">Roadmap</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 - [x] **Phase 1** — Foundation, auth, Python/JS/TS ingest, REST + MCP, CLI
 - [x] **Phase 2** — Incremental updates (per-file sha diff), GraphQL endpoint, Rust/Go/Java/Ruby parsers
@@ -523,8 +543,10 @@ git pull && make build && make restart
 
 </details>
 
+## Development
+
 <details>
-<summary><h2 id="development">Development</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 Backend:
 
@@ -565,8 +587,10 @@ tests/          # pytest
 
 </details>
 
+## Security
+
 <details>
-<summary><h2 id="security">Security</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 - API tokens are 32-byte URL-safe random strings prefixed `ckg_`, **never**
   stored in plaintext — only argon2id hashes are persisted.
@@ -595,8 +619,10 @@ ln -sf ../../scripts/audit-secrets.sh .git/hooks/pre-commit
 
 </details>
 
+## License
+
 <details>
-<summary><h2 id="license">License</h2></summary>
+<summary><b>Show / hide</b></summary>
 
 MIT — see [LICENSE](LICENSE).
 
