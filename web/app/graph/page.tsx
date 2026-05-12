@@ -76,7 +76,10 @@ function Inner() {
       if (next.repo) usp.set("repo", next.repo);
       else usp.delete("repo");
     }
-    if (next.qname !== undefined) usp.set("qname", next.qname);
+    if (next.qname !== undefined) {
+      if (next.qname) usp.set("qname", next.qname);
+      else usp.delete("qname");
+    }
     router.replace(`/graph?${usp.toString()}`);
   }
 
@@ -147,7 +150,26 @@ function Inner() {
       )}
       {enabled && data.nodes.length > 0 && (
         <>
-          <div className="mb-2 flex items-center gap-4 text-xs text-slate-400">
+          <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-slate-400">
+            <button
+              type="button"
+              onClick={() => update({ qname: "" })}
+              className="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200 hover:border-slate-600 hover:bg-slate-900"
+              title="Clear the function and pick another from the suggestions"
+            >
+              <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15 18l-6-6 6-6"
+                />
+              </svg>
+              <span>back to functions</span>
+            </button>
+            <span className="font-mono text-violet-200">{qname}</span>
             <Legend color="bg-violet-400" label="target" />
             <Legend color="bg-emerald-400" label="caller / callee" />
             <span>{data.nodes.length} nodes · {data.links.length} edges</span>
