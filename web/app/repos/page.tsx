@@ -111,17 +111,46 @@ function slugify(raw: string): string {
   return s.slice(0, 63);
 }
 
+type IngestStatus =
+  | { kind: "idle" }
+  | { kind: "queueing"; mode: "full" | "incremental" }
+  | { kind: "queued"; runId: number; mode: "full" | "incremental" }
+  | { kind: "error"; message: string };
+
 function RepoTable() {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ["repos"], queryFn: api.repos });
 
-  const ingest = useMutation({
-    mutationFn: ({ id, mode }: { id: string; mode: "full" | "incremental" }) => api.ingest(id, mode),
-    onSuccess: (_d, vars) => {
+  // Per-row ingest status — `useMutation` is shared across the table, but we
+  // want each row to show its OWN spinner / queued / error state.
+  const [statuses, setStatuses] = useState<Record<string, IngestStatus>>({});
+
+  function setStatus(id: string, s: IngestStatus) {
+    setStatuses((m) => ({ ...m, [id]: s }));
+  }
+
+  async function fireIngest(id: string, mode: "full" | "incremental") {
+    setStatus(id, { kind: "queueing", mode });
+    try {
+      const run = await api.ingest(id, mode);
+      setStatus(id, { kind: "queued", runId: run.id, mode });
       qc.invalidateQueries({ queryKey: ["repos"] });
-      qc.invalidateQueries({ queryKey: ["runs", vars.id] });
-    },
-  });
+      qc.invalidateQueries({ queryKey: ["runs", id] });
+      // Clear the "queued" badge after 5s — the user can hop to the repo
+      // detail page to watch progress live.
+      setTimeout(() => {
+        setStatuses((m) => {
+          const cur = m[id];
+          if (cur?.kind === "queued" && cur.runId === run.id) {
+            return { ...m, [id]: { kind: "idle" } };
+          }
+          return m;
+        });
+      }, 5000);
+    } catch (err) {
+      setStatus(id, { kind: "error", message: (err as Error).message });
+    }
+  }
 
   if (isLoading) return <Spinner />;
   if (error) return <p className="text-red-300">{(error as Error).message}</p>;
@@ -139,31 +168,58 @@ function RepoTable() {
           </tr>
         </thead>
         <tbody>
-          {data.map((r) => (
-            <tr key={r.id} className="border-t border-slate-800">
-              <td className="px-4 py-2 font-mono">
-                <Link href={`/repos/${encodeURIComponent(r.id)}`} className="text-violet-300 hover:underline">
-                  {r.id}
-                </Link>
-              </td>
-              <td className="px-4 py-2 text-slate-400">{r.url}</td>
-              <td className="px-4 py-2 text-slate-400">{r.last_indexed_at ?? "—"}</td>
-              <td className="px-4 py-2 text-right">
-                <button
-                  onClick={() => ingest.mutate({ id: r.id, mode: "incremental" })}
-                  className="mr-2 rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800"
-                >
-                  ingest Δ
-                </button>
-                <button
-                  onClick={() => ingest.mutate({ id: r.id, mode: "full" })}
-                  className="rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800"
-                >
-                  full reparse
-                </button>
-              </td>
-            </tr>
-          ))}
+          {data.map((r) => {
+            const s = statuses[r.id] ?? { kind: "idle" };
+            const busy = s.kind === "queueing";
+            return (
+              <tr key={r.id} className="border-t border-slate-800">
+                <td className="px-4 py-2 font-mono align-top">
+                  <Link
+                    href={`/repos/${encodeURIComponent(r.id)}`}
+                    className="text-violet-300 hover:underline"
+                  >
+                    {r.id}
+                  </Link>
+                </td>
+                <td className="px-4 py-2 text-slate-400 align-top">{r.url}</td>
+                <td className="px-4 py-2 text-slate-400 align-top">
+                  {r.last_indexed_at ?? "—"}
+                </td>
+                <td className="px-4 py-2 text-right align-top">
+                  <button
+                    onClick={() => fireIngest(r.id, "incremental")}
+                    disabled={busy}
+                    className="mr-2 rounded border border-slate-700 px-2 py-1 text-xs disabled:opacity-50 hover:bg-slate-800"
+                  >
+                    {busy && s.mode === "incremental" ? "queuing…" : "ingest Δ"}
+                  </button>
+                  <button
+                    onClick={() => fireIngest(r.id, "full")}
+                    disabled={busy}
+                    className="rounded border border-slate-700 px-2 py-1 text-xs disabled:opacity-50 hover:bg-slate-800"
+                  >
+                    {busy && s.mode === "full" ? "queuing…" : "full reparse"}
+                  </button>
+                  {s.kind === "queued" && (
+                    <div className="mt-1 text-xs text-emerald-300">
+                      ✓ queued ({s.mode}, run #{s.runId}) —{" "}
+                      <Link
+                        href={`/repos/${encodeURIComponent(r.id)}`}
+                        className="underline hover:text-emerald-200"
+                      >
+                        watch progress
+                      </Link>
+                    </div>
+                  )}
+                  {s.kind === "error" && (
+                    <div className="mt-1 text-xs text-red-300" title={s.message}>
+                      ✗ {s.message.slice(0, 80)}
+                    </div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
