@@ -159,9 +159,42 @@ def repo_register(
     repo_id: str = typer.Argument(..., help="Stable slug"),
     url: str = typer.Argument(..., help="git URL (https/ssh) or file:///abs/path for a local clone"),
     branch: str = typer.Option("main", "--branch", "-b"),
+    token: str = typer.Option(
+        "",
+        "--token", "-t",
+        help=(
+            "Personal Access Token for cloning private repos. Encrypted at rest. "
+            "GitHub/GitLab: bare token. Bitbucket: 'username:app-password'. "
+            "Reads from CKG_REPO_TOKEN env if omitted."
+        ),
+    ),
 ) -> None:
+    """Register a repo (optionally with a PAT for private clones)."""
+    body: dict[str, Any] = {"id": repo_id, "url": url, "default_branch": branch}
+    tok = token or os.environ.get("CKG_REPO_TOKEN") or ""
+    if tok:
+        body["token"] = tok
     with _client() as c:
-        r = c.post("/v1/repos", json={"id": repo_id, "url": url, "default_branch": branch})
+        r = c.post("/v1/repos", json=body)
+        r.raise_for_status()
+        _print(r.json())
+
+
+@repo_app.command("credentials")
+def repo_credentials(
+    repo_id: str,
+    token: str = typer.Option("", "--token", "-t", help="Empty value clears the stored credential."),
+    clear: bool = typer.Option(False, "--clear", help="Remove the stored credential."),
+) -> None:
+    """Set or clear the per-repo PAT used when cloning private repos."""
+    if clear:
+        payload: dict[str, Any] = {"token": None}
+    else:
+        if not token:
+            token = typer.prompt("Token (paste; input hidden)", hide_input=True, default="", show_default=False)
+        payload = {"token": token or None}
+    with _client() as c:
+        r = c.put(f"/v1/repos/{repo_id}/credentials", json=payload)
         r.raise_for_status()
         _print(r.json())
 

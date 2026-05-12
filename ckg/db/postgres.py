@@ -55,6 +55,11 @@ class Repo(Base):
     source_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("bulk_sources.id", ondelete="SET NULL"), nullable=True
     )
+    # Per-repo PAT for cloning private repos that weren't registered via a
+    # bulk source. Fernet-encrypted; never logged. Optional — when null, the
+    # clone falls back to the repo's source's auth_secret (if any) or just
+    # an anonymous clone (works for public repos / local file:// paths).
+    auth_secret: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     # Per-repo polling: when > 0, the scheduler queues an incremental ingest
     # this often (seconds). 0 = disabled. Min 60s enforced by scheduler.
     poll_interval_seconds: Mapped[int] = mapped_column(Integer, default=0)
@@ -169,9 +174,31 @@ def get_sessionmaker():
     return _SessionLocal
 
 
+# Additive migrations applied after `create_all`. Each tuple is
+# `(table, column, type)` and is run via `ALTER TABLE … ADD COLUMN IF NOT
+# EXISTS`. This handles the case where a previously-deployed database is
+# missing a column added to the ORM model in a later release. Bigger schema
+# changes (drops, renames, type changes) go through proper Alembic
+# migrations in `alembic/versions/`.
+ADDITIVE_MIGRATIONS: list[tuple[str, str, str]] = [
+    ("repos", "auth_secret", "VARCHAR(2000)"),
+    ("repos", "source_id", "INTEGER"),
+    ("repos", "poll_interval_seconds", "INTEGER DEFAULT 0"),
+    ("ingest_runs", "mode", "VARCHAR(20) DEFAULT 'full'"),
+    ("bulk_sources", "sync_interval_seconds", "INTEGER DEFAULT 0"),
+    ("bulk_sources", "webhook_enabled", "BOOLEAN DEFAULT FALSE"),
+    ("bulk_sources", "webhook_secret", "VARCHAR(120)"),
+]
+
+
 def init_schema() -> None:
-    """Create tables (idempotent)."""
+    """Create tables and apply additive migrations (idempotent)."""
+    from sqlalchemy import text
+
     Base.metadata.create_all(get_engine())
+    with get_engine().begin() as conn:
+        for table, col, typ in ADDITIVE_MIGRATIONS:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}"))
     log.info("postgres_schema_ready")
 
 

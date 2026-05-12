@@ -22,6 +22,15 @@ class RepoIn(BaseModel):
     id: str = Field(..., description="Stable slug, e.g. 'submission-enterprise'")
     url: str = Field(..., description="Clone URL (https or ssh). Local path also accepted: file:///abs/path")
     default_branch: str = "main"
+    token: str | None = Field(
+        None,
+        description=(
+            "Optional Personal Access Token for cloning private repos. "
+            "Encrypted at rest. For GitHub PATs and GitLab tokens, paste the "
+            "bare token. For Bitbucket app passwords use `username:password` "
+            "form."
+        ),
+    )
 
 
 class RepoOut(BaseModel):
@@ -33,6 +42,7 @@ class RepoOut(BaseModel):
     last_indexed_sha: str | None
     poll_interval_seconds: int = 0
     source_id: int | None = None
+    has_token: bool = False
 
 
 class IngestRunOut(BaseModel):
@@ -56,6 +66,7 @@ def _repo_to_out(r: Repo) -> RepoOut:
         last_indexed_sha=r.last_indexed_sha,
         poll_interval_seconds=r.poll_interval_seconds or 0,
         source_id=r.source_id,
+        has_token=bool(r.auth_secret),
     )
 
 
@@ -67,9 +78,50 @@ def register_repo(body: RepoIn, principal: Principal = Depends(require_repo_writ
     with Session() as s:
         if s.get(Repo, body.id):
             raise HTTPException(409, "repo with this id already exists")
-        r = Repo(id=body.id, url=body.url, default_branch=body.default_branch)
+        from ckg.secrets import encrypt
+
+        r = Repo(
+            id=body.id,
+            url=body.url,
+            default_branch=body.default_branch,
+            auth_secret=encrypt(body.token) if body.token else None,
+        )
         s.add(r)
-        s.add(AuditLog(actor=principal.name, action="repo.register", target=body.id, detail={"url": body.url}))
+        # Never log the raw token — audit records the URL + whether a token was supplied.
+        s.add(AuditLog(
+            actor=principal.name, action="repo.register", target=body.id,
+            detail={"url": body.url, "has_token": bool(body.token)},
+        ))
+        s.commit()
+        return _repo_to_out(r)
+
+
+class RepoCredsIn(BaseModel):
+    token: str | None = Field(
+        None,
+        description="Set to a non-empty value to store. Pass null/empty to clear.",
+    )
+
+
+@router.put("/{repo_id}/credentials", response_model=RepoOut)
+def set_credentials(
+    repo_id: str,
+    body: RepoCredsIn,
+    principal: Principal = Depends(require_repo_write),
+) -> RepoOut:
+    """Set or clear the per-repo PAT used when cloning. Encrypted at rest."""
+    from ckg.secrets import encrypt
+
+    Session = get_sessionmaker()
+    with Session() as s:
+        r = s.get(Repo, repo_id)
+        if not r:
+            raise HTTPException(404, "repo not found")
+        r.auth_secret = encrypt(body.token) if body.token else None
+        s.add(AuditLog(
+            actor=principal.name, action="repo.credentials.set",
+            target=repo_id, detail={"has_token": bool(body.token)},
+        ))
         s.commit()
         return _repo_to_out(r)
 

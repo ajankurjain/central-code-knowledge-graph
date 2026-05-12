@@ -26,6 +26,7 @@ function RegisterForm() {
   const [id, setId] = useState("");
   const [url, setUrl] = useState("");
   const [branch, setBranch] = useState("main");
+  const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   // The API requires the repo id to be a lowercase slug ([a-z0-9][a-z0-9-_]{0,62}).
@@ -34,11 +35,12 @@ function RegisterForm() {
   const slug = slugify(id);
 
   const mut = useMutation({
-    mutationFn: () => api.registerRepo(slug, url, branch),
+    mutationFn: () => api.registerRepo(slug, url, branch, token || undefined),
     onSuccess: () => {
       setId("");
       setUrl("");
       setBranch("main");
+      setToken("");
       setError(null);
       qc.invalidateQueries({ queryKey: ["repos"] });
     },
@@ -81,6 +83,20 @@ function RegisterForm() {
         >
           {mut.isPending ? "Registering…" : "Register"}
         </button>
+      </div>
+      <div className="mt-3">
+        <input
+          type="password"
+          placeholder="PAT for private repo (optional — encrypted at rest)"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+          autoComplete="off"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          GitHub / GitLab: paste the bare PAT. Bitbucket: <code>username:app-password</code>.
+          Leave empty for public or local <code>file://</code> repos.
+        </p>
       </div>
       {id && (
         <p className="mt-2 text-xs text-slate-400">

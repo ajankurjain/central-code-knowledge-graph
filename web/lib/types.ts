@@ -14,6 +14,9 @@ export type Repo = {
   languages: string[];
   last_indexed_at: string | null;
   last_indexed_sha: string | null;
+  poll_interval_seconds?: number;
+  source_id?: number | null;
+  has_token?: boolean;
 };
 
 export type IngestRun = {

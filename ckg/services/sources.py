@@ -300,13 +300,57 @@ def delete_source(source_id: int, actor: str) -> dict:
 # ── Auth lookup (used by worker on clone) ───────────────────────────────────
 
 
+def _inject_generic_token(clone_url: str, token: str) -> str:
+    """Build a `https://<user>:<token>@host/path` clone URL when only a bare
+    per-repo PAT is available (no provider context to pick the right username).
+
+    `token` may be in `user:password` form for hosts that need it; otherwise
+    we pick a user based on the host:
+      - github.* → `x-access-token`
+      - *gitlab* → `oauth2`
+      - *bitbucket* → `x-bitbucket-api-token-auth`
+      - other → `git` (works for Gitea + most generic git servers)
+    """
+    from urllib.parse import quote, urlsplit, urlunsplit
+
+    parts = urlsplit(clone_url)
+    if parts.scheme not in {"http", "https"}:
+        return clone_url
+
+    if ":" in token and not token.startswith(("oauth2:", "x-access-token:", "x-bitbucket-")):
+        user, _, pw = token.partition(":")
+    else:
+        host = (parts.netloc or "").lower()
+        if "github." in host:
+            user, pw = "x-access-token", token
+        elif "gitlab" in host:
+            user, pw = "oauth2", token
+        elif "bitbucket" in host:
+            user, pw = "x-bitbucket-api-token-auth", token
+        else:
+            user, pw = "git", token
+    netloc = f"{quote(user, safe='')}:{quote(pw, safe='')}@{parts.netloc}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
 def credentialed_clone_url_for_repo(repo_id: str) -> str | None:
-    """Returns a clone URL with credentials baked in for a repo discovered
-    via a source. Returns None when the repo wasn't from a source or the
-    source has no token."""
+    """Return a clone URL with credentials baked in.
+
+    Resolution order:
+      1. `repos.auth_secret` — per-repo PAT (set on direct registration).
+      2. `bulk_sources.auth_secret` via the source's provider helper.
+      3. None — the worker clones with whatever the bare URL carries.
+    """
     Session = get_sessionmaker()
     with Session() as s:
         repo = s.get(Repo, repo_id)
+        if repo and repo.auth_secret:
+            try:
+                token = decrypt(repo.auth_secret)
+            except Exception:
+                token = ""
+            if token:
+                return _inject_generic_token(repo.url, token)
         if not repo or not repo.source_id:
             return None
         source = s.get(BulkSource, repo.source_id)

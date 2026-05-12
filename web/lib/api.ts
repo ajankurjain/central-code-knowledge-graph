@@ -61,10 +61,20 @@ export const api = {
   ingest: (id: string, mode: "full" | "incremental" = "incremental") =>
     req<IngestRun>(`/v1/repos/${encodeURIComponent(id)}/ingest${qs({ mode })}`, { method: "POST" }),
   runs: (id: string) => req<IngestRun[]>(`/v1/repos/${encodeURIComponent(id)}/runs`),
-  registerRepo: (id: string, url: string, branch = "main") =>
+  registerRepo: (id: string, url: string, branch = "main", token?: string) =>
     req<Repo>("/v1/repos", {
       method: "POST",
-      body: JSON.stringify({ id, url, default_branch: branch }),
+      body: JSON.stringify({
+        id,
+        url,
+        default_branch: branch,
+        ...(token ? { token } : {}),
+      }),
+    }),
+  setRepoCredentials: (id: string, token: string | null) =>
+    req<Repo>(`/v1/repos/${encodeURIComponent(id)}/credentials`, {
+      method: "PUT",
+      body: JSON.stringify({ token }),
     }),
 
   callersOf: (repoId: string, qn: string, depth = 1, limit = 100) =>
