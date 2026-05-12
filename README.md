@@ -338,6 +338,27 @@ make psql                 # psql shell inside the postgres container
 make neo4j-shell          # cypher-shell inside the neo4j container
 ```
 
+### Contributing — pre-push check
+
+CI runs **ruff + pytest** on every push. Run the same gate locally before
+you push so you don't bounce off red builds:
+
+```bash
+make check        # lint + tests, same as CI
+make lint         # ruff only
+make test         # pytest only
+```
+
+One-time install of the git hook that runs `make check` automatically
+before every push (no-op when the diff is README-only):
+
+```bash
+make install-hooks
+```
+
+Bypass for a single push (e.g. README hotfix while the stack is down):
+`SKIP_CKG_PREPUSH=1 git push`.
+
 ### Troubleshooting
 
 Things that bit me during local setup — keep this open the first time you run.
