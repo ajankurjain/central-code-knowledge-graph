@@ -42,6 +42,7 @@ One server that:
 | Fast updates | **Incremental ingest** (`--incremental`): sha-diffs files against the graph, only re-parses what changed. Full reparse stays available as `--full` |
 | Context for AI tools | Built-in MCP HTTP server → Cursor, VS Code, Claude Code drop in |
 | Two query surfaces | REST (`/v1/*`) for simple calls + **GraphQL** (`/v1/graphql`) for composed traversals; both use the same API token |
+| Per-token usage analytics | Every authenticated request is logged into `api_calls`; the `/integrations` page surfaces 24-h totals, top callers, top endpoints with p95 latency, and a live tail |
 | CLI for automation | `ckg` Typer CLI: register, ingest, query, search |
 | Spec-driven | Auto-generated OpenAPI at `/docs`; GraphiQL UI at `/v1/graphql`; ADRs under `docs/adr/` |
 | Whole-codebase index | One Neo4j graph spans all registered repos |
@@ -305,11 +306,13 @@ endpoint detects the provider from headers automatically.
 
 Open <http://localhost:3000>, paste an API token, and explore:
 
-- **Dashboard** — node/edge/repo/file counts; repo list
+- **Dashboard** — node/edge/repo/file counts + an Integrations row (API calls 24h, top caller, sources, tokens) + paginated repo list with filter
 - **Repos** — register repos, queue incremental or full ingests, watch run status
-- **Sources** — paste a GitHub org / GitLab group / Bitbucket workspace / manifest URL and bulk-add every repo it exposes
+- **Sources** — paste a GitHub org / GitLab group / Bitbucket workspace / manifest URL and bulk-add every repo it exposes; per-source live progress bar + editable branch override + recent-failure disclosure
+- **Integrations** — one screen: backend health (Neo4j / Postgres / Redis), copy-paste connection URLs for MCP / GraphQL / REST, connected bulk sources, active AI-client tokens, and 24-hour usage analytics (top callers, top endpoints with p95 latency, live request tail)
 - **Search** — keyword (Lucene FTS) or semantic (vector) across all (or one) repos
-- **Graph** — force-directed call graph for any function, callers + callees up to depth 4
+- **Graph** — force-directed call graph; pick a repo to see its top-20 most-connected functions as click-to-fill entry points, drill into callers + callees up to depth 4
+- **Architecture** — auto-generated module map (Louvain on file-level call/import edges, Maven/Gradle layout aware, directory-tree fallback for thin graphs) + coupling-smell warnings (cyclic deps, god modules, SDP violations)
 
 The UI is a static Next.js bundle served from the `web` container; the
 browser hits the API directly using the bearer token kept in
@@ -389,8 +392,19 @@ Full reference: [docs/api.md](docs/api.md).
 | `GET` | `/v1/graph/blast_radius` | Files affected if this file changes (upstream callers) |
 | `GET` | `/v1/graph/downstream_dependencies` | Files this file depends on (outgoing callees) |
 | `GET` | `/v1/graph/file` | Symbols in a file |
+| `GET` | `/v1/graph/entry_points` | Top-N most-connected functions in a repo (`/graph` page suggestions) |
 | `GET` | `/v1/search/keyword` | Lucene FTS |
 | `GET` | `/v1/search/semantic` | Vector cosine |
+| `POST` | `/v1/repos/{id}/architecture` | Recompute cluster map (synchronous, returns `ArchStats`) |
+| `GET` | `/v1/repos/{id}/architecture` | Read clusters + edges + `edge_source` |
+| `GET` | `/v1/repos/{id}/architecture/warnings` | Coupling warnings (high fan-out / cyclic / low cohesion / SDP violation) |
+| `GET` | `/v1/sources` | List bulk sources |
+| `POST` | `/v1/sources` | Register a bulk source (auto-detects kind; supports `default_branch_override`) |
+| `GET` | `/v1/sources/{id}/progress` | Live ingest progress (indexed / queued / running / failed + `recent_failures`) |
+| `PUT` | `/v1/sources/{id}/branch` | Change a source's per-repo branch override |
+| `POST` | `/v1/sources/{id}/sync` | Trigger discovery + ingest queueing |
+| `GET` | `/v1/analytics/summary` | Sources / tokens / repos / ingests counts for the `/integrations` page |
+| `GET` | `/v1/analytics/usage` | 24-h API usage: totals, top callers, top endpoints (p95 latency), live tail |
 | `POST` | `/v1/mcp` | MCP JSON-RPC for IDEs |
 | `POST` | `/v1/graphql` | GraphQL endpoint (open in browser for GraphiQL UI) |
 
