@@ -7,6 +7,7 @@ import { Navbar } from "@/components/Navbar";
 import { TokenGate } from "@/components/TokenGate";
 import { Spinner } from "@/components/Spinner";
 import { FunctionGraph, type GraphLink, type GraphNode } from "@/components/ForceGraph";
+import { RepoPicker, RefreshButton } from "@/components/RepoPicker";
 import { api } from "@/lib/api";
 
 export default function GraphPage() {
@@ -59,7 +60,10 @@ function Inner() {
 
   function update(next: Partial<{ repo: string; qname: string }>) {
     const usp = new URLSearchParams(params.toString());
-    if (next.repo !== undefined) usp.set("repo", next.repo);
+    if (next.repo !== undefined) {
+      if (next.repo) usp.set("repo", next.repo);
+      else usp.delete("repo");
+    }
     if (next.qname !== undefined) usp.set("qname", next.qname);
     router.replace(`/graph?${usp.toString()}`);
   }
@@ -68,20 +72,18 @@ function Inner() {
     <>
       <form
         onSubmit={(e) => e.preventDefault()}
-        className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 md:grid-cols-[1fr_2fr_auto]"
+        className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 md:grid-cols-[1fr_auto_2fr_auto]"
       >
-        <select
+        <RepoPicker
+          repos={repos.data ?? []}
           value={repo}
-          onChange={(e) => update({ repo: e.target.value })}
-          className="rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-        >
-          <option value="">— select repo —</option>
-          {repos.data?.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.id}
-            </option>
-          ))}
-        </select>
+          onChange={(id) => update({ repo: id })}
+        />
+        <RefreshButton
+          onClick={() => repos.refetch()}
+          isFetching={repos.isFetching}
+          dataUpdatedAt={repos.dataUpdatedAt}
+        />
         <input
           placeholder="qualified function name, e.g. my.module.foo"
           value={qname}
