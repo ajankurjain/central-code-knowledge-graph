@@ -125,6 +125,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  setSourceBranch: (id: number, branch: string) =>
+    req<Source>(`/v1/sources/${id}/branch`, {
+      method: "PUT",
+      body: JSON.stringify({ default_branch_override: branch }),
+    }),
   syncSource: (id: number) =>
     req<{ discovered: number; added: number; already: number; skipped: number; queued: number; errors: string[] }>(
       `/v1/sources/${id}/sync`,

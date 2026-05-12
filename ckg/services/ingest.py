@@ -104,33 +104,25 @@ def ingest_repo(
     except Exception as exc:
         log.warning("source_auth_lookup_failed", repo_id=repo_id, error=str(exc))
     local_path = _checkout(url=effective_url, branch=branch, dest=workdir)
-    # Skip the empty-checkout dance for local file:// repos (the caller picked
-    # the dir on purpose; we shouldn't second-guess them).
-    if not url.startswith("file://"):
-        local_path, branch, switched = _ensure_source_branch(
-            dest=local_path, configured_branch=branch,
+    # Fail loudly if the checkout has no parseable source code. This usually
+    # means the configured branch is a skeleton commit (e.g. GitLab returns
+    # `main` as the default but the team works on `develop`). Surfacing it
+    # as a hard failure lets the operator fix it by editing the branch on
+    # the source/repo, instead of silently producing an indexed-but-empty
+    # repo and a blank /arch page.
+    if not url.startswith("file://") and _count_source_files(local_path) == 0:
+        available = sorted(_remote_branches(local_path))
+        hint = (
+            f" Available branches on origin: {', '.join(available[:8])}"
+            + (f", … (+{len(available) - 8} more)" if len(available) > 8 else "")
+            if available
+            else ""
         )
-        if switched:
-            # Persist so future incremental ingests don't pay the discovery
-            # cost. Best-effort — a write failure here doesn't matter for
-            # correctness of *this* run.
-            try:
-                from sqlalchemy import update
-
-                from ckg.db.postgres import Repo as RepoTable, get_sessionmaker
-
-                with get_sessionmaker()() as s:
-                    s.execute(
-                        update(RepoTable)
-                        .where(RepoTable.id == repo_id)
-                        .values(default_branch=branch),
-                    )
-                    s.commit()
-            except Exception as exc:
-                log.warning(
-                    "ingest_persist_branch_failed", repo_id=repo_id, branch=branch,
-                    error=str(exc),
-                )
+        raise RuntimeError(
+            f"Branch '{branch}' has no source files matching any registered "
+            f"parser. Pick a different branch on the source or this repo."
+            f"{hint}"
+        )
     head_sha = _git_head(local_path)
     log.info("ingest_checkout_done", repo_id=repo_id, mode=mode, path=str(local_path), head=head_sha)
 
@@ -519,13 +511,6 @@ def _checkout(*, url: str, branch: str, dest: Path) -> Path:
     return dest
 
 
-# Branches we'll try in order when the configured default-branch turns out
-# to be a skeleton commit (e.g. GitLab returns `main` but the team uses
-# `develop`). Ordering puts the dev-branch conventions first so the first
-# hit is usually right.
-_BRANCH_FALLBACK_ORDER = ("develop", "main", "master", "trunk", "release", "integration", "dev")
-
-
 def _count_source_files(dest: Path) -> int:
     """Count files under `dest` that match any registered parser's extension.
     Skips `.git/` and node_modules-style hot-spots so a repo of generated
@@ -566,58 +551,6 @@ def _remote_branches(dest: Path) -> set[str]:
         if ref.startswith("refs/heads/"):
             names.add(ref[len("refs/heads/"):])
     return names
-
-
-def _ensure_source_branch(
-    *, dest: Path, configured_branch: str,
-) -> tuple[Path, str, bool]:
-    """If the configured branch holds no source code (common when a repo's
-    canonical 'default' branch is a skeleton commit and real work lives on
-    `develop` or `master`), try a ranked fallback list and switch to the
-    first branch that actually has parseable files.
-
-    Returns (local_path, branch_used, switched). `switched=True` means the
-    caller should persist the new branch back to repos.default_branch so
-    future ingests don't pay the discovery cost again.
-    """
-    if dest is None or not dest.exists():
-        return dest, configured_branch, False
-    if _count_source_files(dest) > 0:
-        return dest, configured_branch, False
-
-    available = _remote_branches(dest)
-    if not available:
-        return dest, configured_branch, False
-
-    # Try fallbacks not equal to the one we already failed on, in priority
-    # order, intersected with what actually exists on the remote.
-    candidates = [b for b in _BRANCH_FALLBACK_ORDER if b != configured_branch and b in available]
-    for branch in candidates:
-        try:
-            # Explicit refspec: without it `git fetch --depth=1 origin <name>`
-            # only updates FETCH_HEAD, leaving `refs/remotes/origin/<name>`
-            # absent, and the subsequent `checkout origin/<name>` fails with
-            # "is not a commit". The `+` allows non-fast-forward updates.
-            subprocess.run(
-                ["git", "-C", str(dest), "fetch", "--depth=1", "origin",
-                 f"+refs/heads/{branch}:refs/remotes/origin/{branch}"],
-                capture_output=True, check=True, timeout=120,
-            )
-            subprocess.run(
-                ["git", "-C", str(dest), "checkout", "-B", branch, f"origin/{branch}"],
-                capture_output=True, check=True, timeout=30,
-            )
-        except subprocess.SubprocessError:
-            continue
-        if _count_source_files(dest) > 0:
-            log.info(
-                "ingest_branch_fallback",
-                from_branch=configured_branch, to_branch=branch,
-            )
-            return dest, branch, True
-
-    # Nothing better — fall back to whatever we originally had.
-    return dest, configured_branch, False
 
 
 def _git_head(path: Path) -> str | None:

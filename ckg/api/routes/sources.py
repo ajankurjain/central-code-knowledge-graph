@@ -62,6 +62,14 @@ class SourceSchedule(BaseModel):
     sync_interval_seconds: int = Field(0, ge=0)
 
 
+class SourceBranchOverride(BaseModel):
+    """Body for `PUT /sources/{id}/branch`. Empty string clears the override
+    (each discovered repo then falls back to its provider-reported default).
+    """
+
+    default_branch_override: str = Field("", max_length=200)
+
+
 class WebhookConfig(BaseModel):
     enabled: bool = True
     rotate_secret: bool = False
@@ -102,6 +110,10 @@ class SourceProgress(BaseModel):
     in_progress: bool
     last_run_at: datetime | None
     last_synced_at: datetime | None
+    # When any latest-run is `failed`, surface up to N representative error
+    # messages so the operator sees the actual cause (e.g. "Branch 'main'
+    # has no source files…"). Empty list when nothing is failed.
+    recent_failures: list[dict] = []
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -278,6 +290,37 @@ def source_progress(
         unstarted = max(0, total_count - len(latest_rows))
         in_progress = queued > 0 or running > 0
 
+        # Up to 5 representative latest-failed runs with their error text so
+        # the operator sees what's actually wrong (wrong branch, auth, …)
+        # instead of just a red bar with a count.
+        recent_failures: list[dict] = []
+        if failed > 0:
+            fail_rows = s.execute(
+                text(
+                    """
+                    SELECT DISTINCT ON (ir.repo_id)
+                        ir.repo_id, ir.error, ir.finished_at
+                    FROM ingest_runs ir
+                    JOIN repos r ON r.id = ir.repo_id
+                    WHERE r.source_id = :sid
+                    ORDER BY ir.repo_id, ir.id DESC
+                    """
+                ),
+                {"sid": source_id},
+            ).all()
+            failed_only = [
+                {
+                    "repo_id": row.repo_id,
+                    "error": (row.error or "").strip()[:400],
+                    "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+                }
+                for row in fail_rows
+                if (row.error or "").strip()
+            ]
+            # Newest first.
+            failed_only.sort(key=lambda f: f["finished_at"] or "", reverse=True)
+            recent_failures = failed_only[:5]
+
         return SourceProgress(
             source_id=source_id,
             total=total_count,
@@ -290,6 +333,7 @@ def source_progress(
             in_progress=in_progress,
             last_run_at=last_run_at,
             last_synced_at=source.last_synced_at,
+            recent_failures=recent_failures,
         )
 
 
@@ -326,6 +370,30 @@ def set_schedule(
         if not row:
             raise HTTPException(404, "source not found")
         row.sync_interval_seconds = max(0, int(body.sync_interval_seconds))
+        s.commit()
+        count = s.execute(select(SourceRepo).where(SourceRepo.source_id == source_id)).scalars().all()
+        return _to_out(row, repo_count=len(count))
+
+
+@router.put("/{source_id}/branch", response_model=SourceOut)
+def set_branch_override(
+    source_id: int,
+    body: SourceBranchOverride,
+    _: Principal = Depends(require_repo_write),
+) -> SourceOut:
+    """Change the per-source branch override applied to every newly-
+    discovered repo on the next sync. Existing repos keep their
+    per-row `default_branch` (operator can change that on the repo
+    page) — the override only takes effect for repos discovered after
+    this call.
+    """
+    Session = get_sessionmaker()
+    with Session() as s:
+        row = s.get(BulkSource, source_id)
+        if not row:
+            raise HTTPException(404, "source not found")
+        new_value = body.default_branch_override.strip() or None
+        row.default_branch_override = new_value
         s.commit()
         count = s.execute(select(SourceRepo).where(SourceRepo.source_id == source_id)).scalars().all()
         return _to_out(row, repo_count=len(count))

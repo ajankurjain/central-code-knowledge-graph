@@ -91,6 +91,9 @@ export type SourceProgress = {
   in_progress: boolean;
   last_run_at: string | null;
   last_synced_at: string | null;
+  // Sample of latest-failed runs — newest first, capped at 5. Empty when
+  // nothing is currently failed.
+  recent_failures?: { repo_id: string; error: string; finished_at: string | null }[];
 };
 
 export type Cluster = {

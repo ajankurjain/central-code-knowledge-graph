@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navbar } from "@/components/Navbar";
 import { TokenGate } from "@/components/TokenGate";
@@ -29,6 +29,7 @@ function AddForm() {
   const qc = useQueryClient();
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
+  const [branch, setBranch] = useState("");
   const [includeForks, setIncludeForks] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [includePrivate, setIncludePrivate] = useState(true);
@@ -39,6 +40,11 @@ function AddForm() {
       api.createSource({
         url,
         token: token || undefined,
+        // Operator-chosen branch wins over the per-repo default reported
+        // by the provider. Pass it as default_branch_override so every
+        // discovered repo gets cloned on this branch. Leave empty to use
+        // whatever the provider says.
+        default_branch_override: branch.trim() || undefined,
         include_private: includePrivate,
         include_forks: includeForks,
         include_archived: includeArchived,
@@ -47,6 +53,7 @@ function AddForm() {
     onSuccess: () => {
       setUrl("");
       setToken("");
+      setBranch("");
       setError(null);
       qc.invalidateQueries({ queryKey: ["sources"] });
       qc.invalidateQueries({ queryKey: ["repos"] });
@@ -75,6 +82,21 @@ function AddForm() {
           placeholder="PAT (optional; required for private repos)"
           value={token}
           onChange={(e) => setToken(e.target.value)}
+          className="rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+        />
+      </div>
+      <div className="grid grid-cols-1 gap-1">
+        <label className="text-xs uppercase tracking-wider text-slate-400">
+          branch to ingest{" "}
+          <span className="ml-1 text-slate-500 normal-case tracking-normal">
+            applied to every discovered repo · leave empty to use each
+            repo's reported default
+          </span>
+        </label>
+        <input
+          placeholder="develop / main / master / …"
+          value={branch}
+          onChange={(e) => setBranch(e.target.value)}
           className="rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
         />
       </div>
@@ -123,6 +145,11 @@ function SourceTable() {
       qc.invalidateQueries({ queryKey: ["repos"] });
     },
   });
+  const setBranch = useMutation({
+    mutationFn: ({ id, branch }: { id: number; branch: string }) =>
+      api.setSourceBranch(id, branch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sources"] }),
+  });
 
   if (isLoading) return <Spinner />;
   if (error) return <p className="text-red-300">{(error as Error).message}</p>;
@@ -137,7 +164,8 @@ function SourceTable() {
             <th className="px-4 py-2">kind</th>
             <th className="px-4 py-2">name</th>
             <th className="px-4 py-2">token</th>
-            <th className="px-4 py-2 w-[34%]">progress</th>
+            <th className="px-4 py-2">branch</th>
+            <th className="px-4 py-2 w-[28%]">progress</th>
             <th className="px-4 py-2 text-right">actions</th>
           </tr>
         </thead>
@@ -148,6 +176,12 @@ function SourceTable() {
               <td className="px-4 py-3 text-slate-300">{s.kind}</td>
               <td className="px-4 py-3 font-mono">{s.name}</td>
               <td className="px-4 py-3">{s.has_token ? "✓" : "—"}</td>
+              <td className="px-4 py-3">
+                <BranchEditor
+                  current={s.default_branch_override}
+                  onSave={(b) => setBranch.mutateAsync({ id: s.id, branch: b })}
+                />
+              </td>
               <td className="px-4 py-3">
                 <ProgressCell sourceId={s.id} fallbackTotal={s.repos} />
               </td>
@@ -183,6 +217,83 @@ function SourceTable() {
   );
 }
 
+// Inline branch-override editor for a source row. Empty value means "use
+// each repo's reported default", a non-empty value applies to every NEW
+// repo on the next sync.
+function BranchEditor({
+  current,
+  onSave,
+}: {
+  current: string | null | undefined;
+  onSave: (branch: string) => Promise<unknown>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(current ?? "");
+  const [pending, setPending] = useState(false);
+
+  // Reset draft when the source data refreshes underneath us.
+  useEffect(() => {
+    if (!editing) setDraft(current ?? "");
+  }, [current, editing]);
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="rounded border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-xs hover:border-slate-600"
+        title="Click to set / clear the branch override"
+      >
+        {current ? (
+          <span className="text-violet-200">{current}</span>
+        ) : (
+          <span className="text-slate-500">(per-repo)</span>
+        )}
+      </button>
+    );
+  }
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setPending(true);
+        try {
+          await onSave(draft.trim());
+          setEditing(false);
+        } finally {
+          setPending(false);
+        }
+      }}
+      className="flex items-center gap-1"
+    >
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="(empty = per-repo)"
+        className="w-32 rounded border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-xs"
+      />
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded bg-violet-500 px-2 py-1 text-xs text-violet-50 disabled:opacity-50 hover:bg-violet-400"
+      >
+        {pending ? "…" : "save"}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(current ?? "");
+          setEditing(false);
+        }}
+        className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+      >
+        cancel
+      </button>
+    </form>
+  );
+}
+
 // Live progress bar per source. Polls /progress every 5s while there's any
 // queued or running run, slows to 30s once everything is settled so we
 // aren't hammering the API on idle pages.
@@ -208,7 +319,7 @@ function ProgressCell({ sourceId, fallbackTotal }: { sourceId: number; fallbackT
     );
   }
 
-  const { total, indexed, queued, running, success, failed, in_progress, last_run_at, last_synced_at } = data;
+  const { total, indexed, queued, running, success, failed, in_progress, last_run_at, last_synced_at, recent_failures } = data;
   const denom = total || 1;
   const pctIndexed = Math.round((indexed / denom) * 100);
   const pctFailed = Math.round((failed / denom) * 100);
@@ -262,6 +373,21 @@ function ProgressCell({ sourceId, fallbackTotal }: { sourceId: number; fallbackT
           </>
         )}
       </div>
+      {recent_failures && recent_failures.length > 0 && (
+        <details className="mt-1 rounded border border-rose-900/50 bg-rose-950/20 px-2 py-1 text-[11px] text-rose-200">
+          <summary className="cursor-pointer text-rose-300">
+            {failed} failed — see {recent_failures.length === 1 ? "the reason" : "sample reasons"}
+          </summary>
+          <ul className="mt-1 space-y-1">
+            {recent_failures.map((f) => (
+              <li key={f.repo_id} className="break-words">
+                <span className="font-mono text-rose-300">{f.repo_id}</span>
+                <span className="ml-1 text-rose-200/80">— {f.error || "(no error message recorded)"}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }
