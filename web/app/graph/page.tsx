@@ -30,6 +30,7 @@ function Inner() {
   const [depth, setDepth] = useState(2);
 
   const repos = useQuery({ queryKey: ["repos"], queryFn: api.repos });
+  const selectedRepo = repos.data?.find((r) => r.id === repo);
 
   const enabled = !!repo && !!qname;
   const callers = useQuery({
@@ -41,6 +42,17 @@ function Inner() {
     queryKey: ["callees", repo, qname, depth],
     queryFn: () => api.calleesOf(repo, qname, depth, 200),
     enabled,
+  });
+
+  // When the user picks a repo but hasn't typed a qname yet, offer the
+  // most-connected functions in that repo as click-to-fill suggestions —
+  // otherwise the page just sits empty with a "enter a function name"
+  // prompt and the user has nowhere to start. Only fires once the repo
+  // has been indexed (no graph data otherwise).
+  const entries = useQuery({
+    queryKey: ["entry-points", repo],
+    queryFn: () => api.entryPoints(repo, 20),
+    enabled: !!repo && !qname && !!selectedRepo?.last_indexed_at,
   });
 
   const data = useMemo(() => {
@@ -103,8 +115,29 @@ function Inner() {
         </label>
       </form>
 
-      {!enabled && (
-        <p className="text-slate-400">Pick a repo and enter a qualified function name to render its call graph.</p>
+      {!repo && (
+        <p className="text-slate-400">Pick a repo to start.</p>
+      )}
+      {repo && selectedRepo && !selectedRepo.last_indexed_at && (
+        <div className="rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+          <b>{selectedRepo.id}</b> hasn't been indexed yet — no call edges to traverse.
+          Trigger an ingest from the{" "}
+          <a
+            href={`/repos/${encodeURIComponent(selectedRepo.id)}`}
+            className="underline"
+          >
+            repo page
+          </a>{" "}
+          first.
+        </div>
+      )}
+      {repo && !qname && selectedRepo?.last_indexed_at && (
+        <EntryPointSuggestions
+          entries={entries.data?.results}
+          isLoading={entries.isLoading}
+          error={entries.error as Error | null}
+          onPick={(qn) => update({ qname: qn })}
+        />
       )}
       {enabled && (callers.isLoading || callees.isLoading) && <Spinner />}
       {(callers.error || callees.error) && (
@@ -123,6 +156,67 @@ function Inner() {
         </>
       )}
     </>
+  );
+}
+
+// Click-to-fill list of the most-connected functions in the selected repo,
+// rendered when the user picked a repo but hasn't typed a qname yet. Saves
+// them from having to know any qualified names ahead of time.
+function EntryPointSuggestions({
+  entries,
+  isLoading,
+  error,
+  onPick,
+}: {
+  entries: { qn: string; path: string; line: number | null; callers: number; callees: number; total: number }[] | undefined;
+  isLoading: boolean;
+  error: Error | null;
+  onPick: (qn: string) => void;
+}) {
+  if (isLoading) return <Spinner />;
+  if (error)
+    return (
+      <p className="text-red-300">Couldn't load entry points: {error.message}</p>
+    );
+  if (!entries || entries.length === 0) {
+    return (
+      <p className="text-slate-400">
+        No call edges discovered in this repo yet — try ingesting it first, or
+        enter a qualified function name manually above.
+      </p>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-4">
+      <h2 className="mb-3 text-sm uppercase tracking-wider text-slate-400">
+        Most-connected functions · click to render
+      </h2>
+      <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+        {entries.map((e) => (
+          <li key={e.qn}>
+            <button
+              type="button"
+              onClick={() => onPick(e.qn)}
+              className="flex w-full items-center justify-between gap-3 rounded px-3 py-2 text-left hover:bg-slate-900"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-mono text-sm text-violet-200">
+                  {shortName(e.qn)}
+                </span>
+                <span className="block truncate text-xs text-slate-500">
+                  {e.path}
+                  {e.line ? `:${e.line}` : ""}
+                </span>
+              </span>
+              <span className="shrink-0 text-xs text-slate-400">
+                <span className="text-emerald-300">{e.callers}</span>↓ ·{" "}
+                <span className="text-sky-300">{e.callees}</span>↑
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

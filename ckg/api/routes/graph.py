@@ -25,6 +25,41 @@ def graph_stats(_: Principal = Depends(require_repo_read)) -> dict:
         }
 
 
+@router.get("/entry_points")
+def entry_points(
+    repo_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    _: Principal = Depends(require_repo_read),
+) -> dict:
+    """Top functions in `repo_id` by total call connectivity.
+
+    Used by the Function call graph page to give the user a starting
+    point when they pick a repo but don't know any qualified function
+    names yet. Sorts by `callers + callees` so genuinely interconnected
+    functions float to the top, not just helpers that everyone calls.
+    """
+    cy = """
+        MATCH (fn:Function {repo_id: $rid})
+        OPTIONAL MATCH (caller:Function)-[:CALLS]->(fn)
+        WITH fn, count(DISTINCT caller) AS in_deg
+        OPTIONAL MATCH (fn)-[:CALLS]->(callee:Function)
+        WITH fn, in_deg, count(DISTINCT callee) AS out_deg
+        WITH fn, in_deg, out_deg, in_deg + out_deg AS total
+        WHERE total > 0
+        RETURN fn.qualified_name AS qn,
+               fn.file_path     AS path,
+               fn.start_line    AS line,
+               in_deg            AS callers,
+               out_deg           AS callees,
+               total
+        ORDER BY total DESC, fn.qualified_name ASC
+        LIMIT $limit
+    """
+    with neo_session() as s:
+        rows = s.run(cy, rid=repo_id, limit=limit).data()
+    return {"repo_id": repo_id, "results": rows}
+
+
 @router.get("/callers_of")
 def callers_of(
     repo_id: str,

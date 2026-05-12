@@ -78,6 +78,11 @@ export const api = {
       body: JSON.stringify({ token }),
     }),
 
+  entryPoints: (repoId: string, limit = 20) =>
+    req<{
+      repo_id: string;
+      results: { qn: string; path: string; line: number | null; callers: number; callees: number; total: number }[];
+    }>(`/v1/graph/entry_points${qs({ repo_id: repoId, limit })}`),
   callersOf: (repoId: string, qn: string, depth = 1, limit = 100) =>
     req<CallersResp>(
       `/v1/graph/callers_of${qs({ repo_id: repoId, qualified_name: qn, depth, limit })}`,
