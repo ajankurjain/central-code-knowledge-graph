@@ -44,8 +44,13 @@ function Inner() {
 
   return (
     <>
-      <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 md:grid-cols-[1fr_auto]">
+      <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 md:grid-cols-[1fr_auto_auto]">
         <RepoPicker repos={repos.data ?? []} value={repo} onChange={pickRepo} />
+        <RefreshButton
+          onClick={() => repos.refetch()}
+          isFetching={repos.isFetching}
+          dataUpdatedAt={repos.dataUpdatedAt}
+        />
         {repo && <ComputeButton repoId={repo} />}
       </div>
 
@@ -191,6 +196,62 @@ function RepoPicker({
       )}
     </div>
   );
+}
+
+// Re-fetches the repo list so newly-indexed repos move from "not indexed"
+// to "indexed" in the picker without a full page reload.
+function RefreshButton({
+  onClick,
+  isFetching,
+  dataUpdatedAt,
+}: {
+  onClick: () => void;
+  isFetching: boolean;
+  dataUpdatedAt: number;
+}) {
+  const since = useRelativeTime(dataUpdatedAt);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={isFetching}
+      title={`Refresh repos${dataUpdatedAt ? ` · last loaded ${since}` : ""}`}
+      aria-label="Refresh repos"
+      className="rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 hover:border-slate-600 hover:bg-slate-900 disabled:opacity-50"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        width="16"
+        height="16"
+        aria-hidden="true"
+        className={`inline-block ${isFetching ? "animate-spin" : ""}`}
+      >
+        <path
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M21 12a9 9 0 1 1-3.2-6.9M21 4v5h-5"
+        />
+      </svg>
+    </button>
+  );
+}
+
+// Lightweight "x s/m/h ago" formatter so the tooltip stays current without
+// pulling in date-fns just for one label.
+function useRelativeTime(ts: number): string {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => tick((n) => n + 1), 15_000);
+    return () => clearInterval(i);
+  }, []);
+  if (!ts) return "";
+  const diff = Math.max(0, Date.now() - ts);
+  if (diff < 60_000) return `${Math.round(diff / 1000)}s ago`;
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+  return `${Math.round(diff / 3_600_000)}h ago`;
 }
 
 function ComputeButton({ repoId }: { repoId: string }) {
