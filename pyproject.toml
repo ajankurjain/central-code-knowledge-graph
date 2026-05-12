@@ -53,10 +53,15 @@ server = [
     "alembic>=1.13",
     "redis>=5.2",
     "celery[redis]>=5.4",
-    # Use a recent language-pack — earlier 0.x ships its own Parser type that
-    # doesn't expose `.parse()` against modern tree-sitter.
+    # tree-sitter-language-pack >=1.0 ships its OWN C-extension Parser class
+    # (in `builtins`, no public methods) that's incompatible with the upstream
+    # `tree_sitter` package — `Parser(get_language(name))` raises
+    # "argument 1 must be tree_sitter.Language, not builtins.Language", and
+    # the lang-pack's own parser has no `.parse` method. Pin to the 0.7.x
+    # range, which still depends on `tree-sitter>=0.23` and re-exports the
+    # upstream `tree_sitter.Language` / `Parser` types our parsers use.
     "tree-sitter>=0.23,<0.25",
-    "tree-sitter-language-pack>=0.7",
+    "tree-sitter-language-pack>=0.7.4,<0.10",
     "gitpython>=3.1",
     "pyyaml>=6.0",
     "sentence-transformers>=3.3",
