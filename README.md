@@ -6,7 +6,7 @@
 
 AI coding tools re-read your entire codebase on every task. `ckg` fixes that. One server indexes every repo in your org with [Tree-sitter](https://tree-sitter.github.io/) across 26 languages, stores the structural map as a [Neo4j](https://neo4j.com/) property graph, keeps it fresh via incremental ingest + webhooks, and serves precise context to your AI assistant via [MCP](https://modelcontextprotocol.io/) so it reads only what matters.
 
-[![PyPI](https://img.shields.io/pypi/v/central-code-knowledge-graph?label=pypi&cacheSeconds=120)](https://pypi.org/project/central-code-knowledge-graph/)
+[![PyPI](https://img.shields.io/pypi/v/central-code-knowledge-graph?label=pypi&color=blue&cacheSeconds=60)](https://pypi.org/project/central-code-knowledge-graph/)
 [![CI](https://github.com/ajankurjain/central-code-knowledge-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/ajankurjain/central-code-knowledge-graph/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](pyproject.toml)
