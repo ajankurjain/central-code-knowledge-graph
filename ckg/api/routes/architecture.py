@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from ckg.auth import Principal, require_repo_read, require_repo_write
 from ckg.db.postgres import AuditLog, Repo, get_sessionmaker
 from ckg.services.architecture import (
+    get_edge_source,
     list_cluster_edges,
     list_clusters,
     list_warnings,
@@ -45,6 +46,11 @@ def get_map(repo_id: str, _: Principal = Depends(require_repo_read)) -> dict:
         "repo_id": repo_id,
         "clusters": list_clusters(repo_id),
         "edges": list_cluster_edges(repo_id),
+        # `edge_source` tells the UI whether the clusters came from real
+        # call/import signal or from the directory-tree fallback (so it
+        # can show a "built from directory layout — call graph was thin"
+        # banner instead of pretending the metrics are precise).
+        "edge_source": get_edge_source(repo_id),
     }
 
 

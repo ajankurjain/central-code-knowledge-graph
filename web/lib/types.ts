@@ -116,6 +116,9 @@ export type ArchitectureMap = {
   repo_id: string;
   clusters: Cluster[];
   edges: ClusterEdge[];
+  // "calls+imports" (precise), "directory_fallback" (layout-only), or null
+  // when the map has never been computed.
+  edge_source?: "calls+imports" | "directory_fallback" | "no_files" | string | null;
 };
 
 export type Warning = {

@@ -50,6 +50,12 @@ class ArchStats:
     warnings: int = 0
     warnings_by_kind: dict[str, int] = field(default_factory=dict)
     computed_at: str = ""
+    # Diagnostic — explains how we derived the edges so the UI can show
+    # something useful when results look thin. One of:
+    #   "calls+imports" — primary signal worked
+    #   "directory_fallback" — primary was empty, used directory grouping
+    #   "no_files"        — no Files in the graph for this repo
+    edge_source: str = "calls+imports"
 
     def to_dict(self) -> dict:
         return {
@@ -60,7 +66,27 @@ class ArchStats:
             "warnings": self.warnings,
             "warnings_by_kind": self.warnings_by_kind,
             "computed_at": self.computed_at,
+            "edge_source": self.edge_source,
         }
+
+
+# Common path prefixes that show up between the repo root and the source
+# tree's logical root. Stripping these lets the IMPORTS matcher line up
+# Java/Kotlin/Scala packages with their physical file paths.
+_LAYOUT_PREFIXES = (
+    "src/main/java/",
+    "src/main/kotlin/",
+    "src/main/scala/",
+    "src/main/groovy/",
+    "src/test/java/",
+    "src/test/kotlin/",
+    "src/test/scala/",
+    "src/",
+    "app/",
+    "lib/",
+    "pkg/",
+    "internal/",
+)
 
 
 # ── Public entrypoint ───────────────────────────────────────────────────────
@@ -69,12 +95,31 @@ class ArchStats:
 def compute_architecture(repo_id: str) -> ArchStats:
     log.info("arch_compute_start", repo_id=repo_id)
     edges = _file_dependency_edges(repo_id)
-    if not edges:
-        # Empty graph (nothing to cluster). Still wipe stale state.
-        _wipe(repo_id)
-        return ArchStats(
+    edge_source = "calls+imports"
+
+    # If the primary signal is too thin to cluster on (very common for
+    # Java/Kotlin repos before LSP is on, plus any repo whose parsers
+    # don't emit cross-file calls), fall back to a directory-tree edge
+    # set so the user still gets a structural map instead of a blank
+    # screen. The fallback only kicks in when CALLS+IMPORTS came up
+    # essentially empty — never on healthy repos.
+    if len(edges) < 2:
+        repo_files = _list_repo_files(repo_id)
+        if not repo_files:
+            _wipe(repo_id)
+            log.info("arch_compute_empty", repo_id=repo_id, reason="no_files")
+            return ArchStats(
+                repo_id=repo_id,
+                computed_at=datetime.now(UTC).isoformat(),
+                edge_source="no_files",
+            )
+        edges = _directory_proximity_edges(repo_files)
+        edge_source = "directory_fallback"
+        log.info(
+            "arch_compute_fallback",
             repo_id=repo_id,
-            computed_at=datetime.now(UTC).isoformat(),
+            files=len(repo_files),
+            edges=len(edges),
         )
 
     # 1. Build the graphs we need.
@@ -157,7 +202,9 @@ def compute_architecture(repo_id: str) -> ArchStats:
     # 6. Persist.
     computed_at = datetime.now(UTC).isoformat()
     _wipe(repo_id)
-    _write_clusters(repo_id, clusters, cluster_metrics, cluster_edges, computed_at)
+    _write_clusters(
+        repo_id, clusters, cluster_metrics, cluster_edges, computed_at, edge_source,
+    )
     _write_warnings(repo_id, warnings, computed_at)
 
     by_kind: dict[str, int] = defaultdict(int)
@@ -172,6 +219,7 @@ def compute_architecture(repo_id: str) -> ArchStats:
         warnings=len(warnings),
         warnings_by_kind=dict(by_kind),
         computed_at=computed_at,
+        edge_source=edge_source,
     )
     log.info("arch_compute_done", **stats.to_dict())
     return stats
@@ -184,14 +232,15 @@ def _file_dependency_edges(repo_id: str) -> list[tuple[str, str, int]]:
     """File→File edge weight from CALLS (sum of call counts) + IMPORTS.
 
     IMPORTS today point to Module nodes keyed by the import-string; without
-    a resolver we can't link them to a specific File. We still pick them up
-    when the Module name matches another file's `module_qname`-style path
-    (best-effort; works for Python/Java); cross-language IMPORTS coverage
-    will grow with the resolver work in Phase 3+.
+    a resolver we can't link them to a specific File. We pick them up
+    in Python by name-stem equality, and in Java/Kotlin/Scala by walking
+    a known set of Maven/Gradle layout prefixes off the file path before
+    converting / → . to derive the candidate module name. Cross-language
+    IMPORTS coverage will keep growing with the resolver work in Phase 3+.
     """
     out: dict[tuple[str, str], int] = defaultdict(int)
     with neo_session() as s:
-        # CALLS-derived file→file edges
+        # CALLS-derived file→file edges.
         rows = s.run(
             """
             MATCH (a:File {repo_id: $rid})-[:DEFINES]->(:Function)
@@ -204,27 +253,121 @@ def _file_dependency_edges(repo_id: str) -> list[tuple[str, str, int]]:
         for r in rows:
             out[(r["src"], r["dst"])] += r["w"]
 
-        # IMPORTS-derived edges, best-effort via Module name equality with
-        # the importer-relative path-stem. Cheap and language-agnostic where
-        # the parser used dotted module names that match the path.
-        rows = s.run(
+        # IMPORTS-derived edges. We do the path → module candidate set
+        # transformation in Python (instead of inline in Cypher) so the
+        # Maven/Gradle prefix-stripping logic lives in one place. Cheap:
+        # both result sets are small, and the join is a hash.
+        imports = s.run(
             """
             MATCH (a:File {repo_id: $rid})-[:IMPORTS]->(m:Module {repo_id: $rid})
-            MATCH (b:File {repo_id: $rid})
-            WHERE a <> b
-              AND (
-                m.name = replace(replace(b.path, '.py', ''), '/', '.') OR
-                m.name = replace(replace(b.path, '.java', ''), '/', '.') OR
-                m.name = b.path
-              )
-            RETURN a.path AS src, b.path AS dst, 1 AS w
+            RETURN a.path AS src, m.name AS module
             """,
             rid=repo_id,
         ).data()
-        for r in rows:
-            out[(r["src"], r["dst"])] += r["w"]
+        file_rows = s.run(
+            """
+            MATCH (b:File {repo_id: $rid})
+            RETURN b.path AS path
+            """,
+            rid=repo_id,
+        ).data()
+
+        # Build module-candidate → file-path map. A single file can match
+        # multiple candidate module names (one per layout prefix), all
+        # pointing at the same File.
+        module_to_file: dict[str, str] = {}
+        for row in file_rows:
+            for candidate in _module_candidates(row["path"]):
+                module_to_file.setdefault(candidate, row["path"])
+
+        for imp in imports:
+            dst = module_to_file.get(imp["module"])
+            if dst is None or dst == imp["src"]:
+                continue
+            out[(imp["src"], dst)] += 1
 
     return [(s, d, w) for (s, d), w in out.items()]
+
+
+def _module_candidates(path: str) -> list[str]:
+    """Return module-name candidates derived from a file path.
+
+    For `src/main/java/com/foo/Bar.java` we yield:
+        com.foo.Bar                 (Java/Kotlin/Scala)
+        src.main.java.com.foo.Bar   (legacy / non-Maven layout)
+        com/foo/Bar.java            (raw path matches some manifests)
+    The first list element is the most likely match; later ones are
+    progressively weaker fallbacks. We dedupe on the way out.
+    """
+    out: list[str] = [path]
+    # Strip language extension.
+    for ext in (".py", ".java", ".kt", ".kts", ".scala", ".groovy", ".ts", ".tsx", ".js", ".jsx"):
+        if path.endswith(ext):
+            stem = path[: -len(ext)]
+            break
+    else:
+        stem = path
+
+    # Maven/Gradle / src-rooted layouts. Strip the longest matching prefix
+    # first so `src/main/java/...` doesn't shadow `src/...`.
+    sorted_prefixes = sorted(_LAYOUT_PREFIXES, key=len, reverse=True)
+    for prefix in sorted_prefixes:
+        if stem.startswith(prefix):
+            rel = stem[len(prefix):]
+            out.append(rel.replace("/", "."))
+            out.append(rel)  # raw path-without-prefix
+            break
+
+    # Universal fallback — works for Python and for any case where the
+    # parser stored a name that mirrors the raw repo-relative path.
+    out.append(stem.replace("/", "."))
+    # Dedupe preserving order.
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for m in out:
+        if m and m not in seen:
+            seen.add(m)
+            deduped.append(m)
+    return deduped
+
+
+def _list_repo_files(repo_id: str) -> list[str]:
+    """All File paths for `repo_id`, used by the directory-proximity
+    fallback when CALLS+IMPORTS yields no edges."""
+    with neo_session() as s:
+        rows = s.run(
+            "MATCH (f:File {repo_id: $rid}) RETURN f.path AS path",
+            rid=repo_id,
+        ).data()
+    return [r["path"] for r in rows]
+
+
+def _directory_proximity_edges(paths: list[str]) -> list[tuple[str, str, int]]:
+    """Cluster-by-directory fallback. Adds a weight-1 edge between every
+    pair of files that share a parent directory. Louvain on this graph
+    yields the directory tree (modulo merges across short directories).
+    Always non-empty for any repo with >1 file, so the user gets a
+    meaningful structural map even when the call/import signal is thin.
+    """
+    by_dir: dict[str, list[str]] = defaultdict(list)
+    for p in paths:
+        # Group by the file's immediate parent directory. Files at the
+        # repo root all live in "".
+        if "/" in p:
+            parent = p.rsplit("/", 1)[0]
+        else:
+            parent = ""
+        by_dir[parent].append(p)
+    edges: list[tuple[str, str, int]] = []
+    for siblings in by_dir.values():
+        if len(siblings) < 2:
+            continue
+        # Star from the alphabetically-first file outward; an undirected
+        # Louvain pass groups them all into one community regardless.
+        anchor = siblings[0]
+        for other in siblings[1:]:
+            edges.append((anchor, other, 1))
+    return edges
 
 
 def _build_undirected(edges) -> nx.Graph:
@@ -400,6 +543,7 @@ def _write_clusters(
     metrics: dict[int, dict],
     cluster_edges: dict[tuple[int, int], dict[str, int]],
     computed_at: str,
+    edge_source: str = "calls+imports",
 ) -> None:
     cluster_rows = [
         {
@@ -434,9 +578,11 @@ def _write_clusters(
                   cl.cohesion = row.cohesion,
                   cl.fan_in = row.fan_in,
                   cl.fan_out = row.fan_out,
-                  cl.computed_at = $computed_at
+                  cl.computed_at = $computed_at,
+                  cl.edge_source = $edge_source
             """,
             rid=repo_id, rows=cluster_rows, computed_at=computed_at,
+            edge_source=edge_source,
         )
         if membership_rows:
             s.run(
@@ -523,6 +669,22 @@ def list_clusters(repo_id: str) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def get_edge_source(repo_id: str) -> str | None:
+    """Returns `edge_source` from any one Cluster of this repo (all Clusters
+    in a single compute share it). Used by the GET endpoint so the UI can
+    explain which signal the map was built from."""
+    with neo_session() as s:
+        row = s.run(
+            """
+            MATCH (cl:Cluster {repo_id: $rid})
+            RETURN cl.edge_source AS edge_source
+            LIMIT 1
+            """,
+            rid=repo_id,
+        ).single()
+    return row["edge_source"] if row else None
 
 
 def list_cluster_edges(repo_id: str) -> list[dict]:

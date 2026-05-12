@@ -217,11 +217,16 @@ function Content({
     if (computeState.kind === "timed_out") {
       return (
         <div className="rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
-          Recompute finished but produced no clusters. The repo's call / import
-          graph may be sparse (common for Java repos before LSP resolution is on,
-          and for repos whose languages aren't yet wired into the file-edge
-          extractor). Try running an incremental ingest, or check the worker
-          logs.
+          Recompute finished but no clusters reached the UI — this usually means
+          the repo has no <code>File</code> nodes in the graph yet. Trigger a
+          full ingest from the{" "}
+          <a
+            href={`/repos/${encodeURIComponent(repoId)}`}
+            className="underline"
+          >
+            repo page
+          </a>{" "}
+          and retry, or check the worker logs.
         </div>
       );
     }
@@ -244,6 +249,14 @@ function Content({
       )}
       {hasMap && arch.data && (
         <>
+          {arch.data.edge_source === "directory_fallback" && (
+            <div className="rounded border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-300">
+              Built from the repo's directory layout — the call / import
+              graph was too thin for this repo's language(s) to cluster on
+              precisely. Fan-in / fan-out / instability numbers below are
+              structural proxies, not behavioural.
+            </div>
+          )}
           <ClusterMap data={arch.data.clusters} edges={arch.data.edges} />
           <ClusterTable clusters={arch.data.clusters} />
           <WarningsPanel
