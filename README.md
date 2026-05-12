@@ -98,35 +98,136 @@ Pluggable — adding another language is one file under `ckg/parsers/` and one l
 <details>
 <summary><b>Show / hide</b></summary>
 
+### System topology
+
+```mermaid
+flowchart LR
+    subgraph clients["🤖 Clients"]
+        direction TB
+        AI["AI agents<br/>(Cursor, VS Code,<br/>Claude Code)"]
+        CLI["ckg CLI"]
+        WEB["Web UI"]
+    end
+
+    subgraph api["⚡ API layer"]
+        direction TB
+        FA["FastAPI<br/>REST + GraphQL + MCP"]
+        AUTH["Auth + Audit<br/>(scoped tokens)"]
+    end
+
+    subgraph stores["💾 Datastores"]
+        direction TB
+        NEO["Neo4j 5<br/>graph + vector + FTS"]
+        PG["Postgres<br/>repos / tokens / runs<br/>api_calls / audit"]
+        RDS["Redis<br/>cache + Celery broker"]
+    end
+
+    subgraph workers["⚙️ Workers"]
+        direction TB
+        CEL["Celery workers<br/>clone · parse · embed · write"]
+        BEAT["Celery beat<br/>poll · reconcile · prune"]
+        TS["Tree-sitter parsers<br/>23 languages + Vue/Svelte/Jupyter"]
+    end
+
+    AI    -- MCP   --> FA
+    CLI   -- REST  --> FA
+    WEB   -- GraphQL --> FA
+    FA -.-> AUTH
+    FA --> NEO
+    FA --> PG
+    FA --> RDS
+    RDS --> CEL
+    BEAT --> RDS
+    CEL --> TS
+    CEL --> NEO
+    CEL --> PG
+
+    classDef clients fill:#e8eef9,stroke:#5b7ec9,color:#1e2a4a
+    classDef api fill:#f0e8f9,stroke:#8c5fc9,color:#3a1e4a
+    classDef stores fill:#e8f6e8,stroke:#5fa05f,color:#1e3a1e
+    classDef workers fill:#fff5dc,stroke:#c99a5b,color:#4a3a1e
+    class AI,CLI,WEB clients
+    class FA,AUTH api
+    class NEO,PG,RDS stores
+    class CEL,BEAT,TS workers
 ```
-                      ┌──────────────┐
-   AI agents ───MCP──▶│              │
-   CLI (ckg) ──REST──▶│   FastAPI    │──▶ Auth (API tokens, scopes)
-   Web UI ────GQL───▶ │              │──▶ Audit log
-                      └──────┬───────┘
-                             │
-            ┌────────────────┼─────────────────────────────┐
-            ▼                ▼                             ▼
-     ┌────────────┐   ┌─────────────┐              ┌───────────────┐
-     │ Neo4j 5    │   │ Postgres    │              │ Redis         │
-     │ graph +    │   │ repos +     │              │ cache + queue │
-     │ vector +   │   │ tokens +    │              └───────┬───────┘
-     │ FTS        │   │ runs +      │                      │
-     └────────────┘   │ audit       │              ┌───────▼───────┐
-                      └─────────────┘              │ Celery workers│
-                                                   │  - clone      │
-                                                   │  - parse      │
-                                                   │  - embed      │
-                                                   │  - write graph│
-                                                   └───────┬───────┘
-                                                           │
-                                                   ┌───────▼───────┐
-                                                   │ Tree-sitter   │
-                                                   │ parsers       │
-                                                   │ Py / JS / TS  │
-                                                   │ (Rust/Ruby/   │
-                                                   │  Go/Java soon)│
-                                                   └───────────────┘
+
+### The token problem ckg solves
+
+```mermaid
+flowchart LR
+    subgraph without["❌ Without ckg"]
+        direction TB
+        Q1["AI agent question:<br/><i>'what calls login()?'</i>"]
+        FILES["📚 Read 27,732 files<br/>~739K tokens"]
+        ANS1["Mediocre answer<br/>quality: 7/10"]
+        Q1 --> FILES --> ANS1
+    end
+
+    subgraph with["✅ With ckg"]
+        direction TB
+        Q2["AI agent question:<br/><i>'what calls login()?'</i>"]
+        QUERY["GET /v1/graph/callers_of<br/>~15 files, 15K tokens"]
+        ANS2["Precise answer<br/>quality: 9/10"]
+        Q2 --> QUERY --> ANS2
+    end
+
+    classDef bad fill:#fee,stroke:#c33,color:#5a1414
+    classDef good fill:#e8f6e8,stroke:#3a7a3a,color:#1e3a1e
+    class Q1,FILES,ANS1 bad
+    class Q2,QUERY,ANS2 good
+```
+
+### Incremental updates pipeline
+
+```mermaid
+flowchart TB
+    GIT["📝 git commit / file save"] --> HOOK["⚓ post-commit hook fires"]
+    HOOK --> DIFF["🔍 git diff<br/><sub>2 changed files</sub>"]
+    DIFF --> DEPS["🌐 Find dependents in graph<br/><sub>3 dependent files via CALLS / IMPORTS</sub>"]
+    DEPS --> PARSE["🌳 Re-parse 5 files only<br/><sub>tree-sitter, SHA-256 dedupe</sub>"]
+    PARSE --> WRITE["✅ Graph updated<br/><sub>&lt; 2 seconds</sub>"]
+    SKIP["💤 27,727 files skipped<br/><sub>unchanged SHA</sub>"]
+    DIFF -.-> SKIP
+
+    classDef trigger fill:#e8eef9,stroke:#5b7ec9,color:#1e2a4a
+    classDef work    fill:#fff5dc,stroke:#c99a5b,color:#4a3a1e
+    classDef good    fill:#e8f6e8,stroke:#3a7a3a,color:#1e3a1e
+    classDef skip    fill:#eeeeee,stroke:#aaa,color:#666,stroke-dasharray: 4 2
+    class GIT,HOOK trigger
+    class DIFF,DEPS,PARSE work
+    class WRITE good
+    class SKIP skip
+```
+
+### Blast radius of a change
+
+```mermaid
+flowchart TB
+    CHANGED(("auth.py<br/><b>login()</b><br/>CHANGED"))
+    USER["User"]
+    VALIDATE["validate_token()"]
+    AUTH["AuthMiddleware"]
+    PROTECT["protected_route()"]
+    TLOGIN["test_login()"]
+    TPROTECT["test_protected()"]
+
+    CHANGED -- IMPORTS --> USER
+    CHANGED -- TESTED_BY --> TLOGIN
+    CHANGED -- CALLS --> VALIDATE
+    VALIDATE -- CALLS --> AUTH
+    VALIDATE -- CALLS --> PROTECT
+    PROTECT -- TESTED_BY --> TPROTECT
+
+    UTIL["utils.py"]:::ghost
+    CONFIG["config.py"]:::ghost
+    DB["database.py"]:::ghost
+
+    classDef src     fill:#ffe9d6,stroke:#e07a3c,color:#4a2814,stroke-width:2px
+    classDef changed fill:#fec5b6,stroke:#c8451a,color:#5a1414,stroke-width:3px
+    classDef ghost   fill:#f5f5f5,stroke:#bbb,color:#999,stroke-dasharray: 4 2
+    class CHANGED changed
+    class USER,VALIDATE,AUTH,PROTECT,TLOGIN,TPROTECT src
 ```
 
 Full design rationale: [docs/adr/0001-architecture.md](docs/adr/0001-architecture.md).
