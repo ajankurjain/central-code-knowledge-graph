@@ -28,8 +28,13 @@ function RegisterForm() {
   const [branch, setBranch] = useState("main");
   const [error, setError] = useState<string | null>(null);
 
+  // The API requires the repo id to be a lowercase slug ([a-z0-9][a-z0-9-_]{0,62}).
+  // Slugify what the user typed so "Policy Service" becomes "policy-service" before
+  // we send it. Same rules as the server-side render_slug() in ckg/services/sources.py.
+  const slug = slugify(id);
+
   const mut = useMutation({
-    mutationFn: () => api.registerRepo(id, url, branch),
+    mutationFn: () => api.registerRepo(slug, url, branch),
     onSuccess: () => {
       setId("");
       setUrl("");
@@ -46,42 +51,64 @@ function RegisterForm() {
         e.preventDefault();
         mut.mutate();
       }}
-      className="mb-6 grid grid-cols-1 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 md:grid-cols-[1fr_2fr_1fr_auto]"
+      className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4"
     >
-      <input
-        placeholder="slug, e.g. my-repo"
-        value={id}
-        onChange={(e) => setId(e.target.value)}
-        className="rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
-        required
-      />
-      <input
-        placeholder="git URL or file:///abs/path"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        className="rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
-        required
-      />
-      <input
-        placeholder="branch"
-        value={branch}
-        onChange={(e) => setBranch(e.target.value)}
-        className="rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
-      />
-      <button
-        type="submit"
-        disabled={mut.isPending}
-        className="rounded bg-violet-500 px-4 py-2 text-sm font-medium text-violet-50 disabled:opacity-50 hover:bg-violet-400"
-      >
-        {mut.isPending ? "Registering…" : "Register"}
-      </button>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_2fr_1fr_auto]">
+        <input
+          placeholder="name (e.g. Policy Service)"
+          value={id}
+          onChange={(e) => setId(e.target.value)}
+          className="rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+          required
+        />
+        <input
+          placeholder="git URL or file:///abs/path"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          className="rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+          required
+        />
+        <input
+          placeholder="branch"
+          value={branch}
+          onChange={(e) => setBranch(e.target.value)}
+          className="rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+        />
+        <button
+          type="submit"
+          disabled={mut.isPending || !slug || !url}
+          className="rounded bg-violet-500 px-4 py-2 text-sm font-medium text-violet-50 disabled:opacity-50 hover:bg-violet-400"
+        >
+          {mut.isPending ? "Registering…" : "Register"}
+        </button>
+      </div>
+      {id && (
+        <p className="mt-2 text-xs text-slate-400">
+          will be registered as{" "}
+          <code className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-violet-300">
+            {slug || "(invalid — start with a letter or digit)"}
+          </code>
+        </p>
+      )}
       {error && (
-        <div className="col-span-full rounded border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+        <div className="mt-3 rounded border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
           {error}
         </div>
       )}
     </form>
   );
+}
+
+// Mirror of the server-side slugifier in ckg/services/sources.py::render_slug.
+// Lowercase, replace non [a-z0-9-_] with `-`, collapse runs, trim leading
+// non-alphanumerics, cap at 63 chars (matches the API's regex).
+function slugify(raw: string): string {
+  if (!raw) return "";
+  let s = raw.toLowerCase().replace(/[^a-z0-9\-_]+/g, "-");
+  s = s.replace(/-+/g, "-").replace(/^[-_]+|[-_]+$/g, "");
+  // The API requires the FIRST char to be [a-z0-9]; strip leading non-alnum just in case.
+  s = s.replace(/^[^a-z0-9]+/, "");
+  return s.slice(0, 63);
 }
 
 function RepoTable() {
