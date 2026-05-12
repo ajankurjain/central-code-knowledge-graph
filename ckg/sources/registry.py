@@ -5,7 +5,11 @@ from __future__ import annotations
 from ckg.sources.base import SourceProvider
 from ckg.sources.bitbucket import BitbucketWorkspaceProvider
 from ckg.sources.github import GitHubOrgProvider, GitHubUserProvider
-from ckg.sources.gitlab import GitLabGroupProvider, GitLabUserProvider
+from ckg.sources.gitlab import (
+    GitLabGroupProvider,
+    GitLabInstanceProvider,
+    GitLabUserProvider,
+)
 from ckg.sources.manifest import ManifestProvider
 
 _PROVIDERS: dict[str, SourceProvider] = {
@@ -13,6 +17,7 @@ _PROVIDERS: dict[str, SourceProvider] = {
     "github_user": GitHubUserProvider(),
     "gitlab_group": GitLabGroupProvider(),
     "gitlab_user": GitLabUserProvider(),
+    "gitlab_instance": GitLabInstanceProvider(),
     "bitbucket_workspace": BitbucketWorkspaceProvider(),
     "manifest": ManifestProvider(),
 }
