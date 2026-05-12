@@ -139,7 +139,21 @@ export const api = {
     req<{ deleted_source_id: number; repos_dropped: string[] }>(`/v1/sources/${id}`, { method: "DELETE" }),
 
   computeArchitecture: (repoId: string) =>
-    req<{ status: string; repo_id: string }>(
+    req<{
+      status: string;
+      repo_id: string;
+      // The full ArchStats payload from the sync compute. `clusters` is the
+      // count, `edge_source` tells the UI whether the result is a real
+      // calls+imports map, a directory-tree fallback, or no_files (when
+      // the configured branch contributed nothing to the graph).
+      clusters: number;
+      files: number;
+      edges: number;
+      warnings: number;
+      warnings_by_kind: Record<string, number>;
+      computed_at: string;
+      edge_source: "calls+imports" | "directory_fallback" | "no_files" | string;
+    }>(
       `/v1/repos/${encodeURIComponent(repoId)}/architecture`,
       { method: "POST" },
     ),

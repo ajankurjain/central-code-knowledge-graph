@@ -33,10 +33,23 @@ export default function ArchitecturePage() {
   );
 }
 
+// Outcome of the most recent compute, stored on the state machine so the UI
+// can render the result-specific banner (no_files / directory_fallback / OK)
+// even when the persisted GET response is ambiguous (e.g. compute_architecture
+// returns 0 clusters and writes nothing readable on the no_files path).
+type ComputeOutcome = {
+  clusters: number;
+  files: number;
+  edges: number;
+  warnings: number;
+  edge_source: "calls+imports" | "directory_fallback" | "no_files" | string;
+  computed_at: string;
+};
+
 // Compute-state machine driven by Inner. ComputeButton triggers it; Content
 // reads it to decide whether to render a status banner alongside the map.
 type ComputeState =
-  | { kind: "idle" }
+  | { kind: "idle"; lastResult?: ComputeOutcome }
   | { kind: "computing"; startedAt: number } // POST in flight (sync)
   | { kind: "timed_out"; startedAt: number } // request hung past budget
   | { kind: "error"; message: string };
@@ -122,14 +135,23 @@ function ComputeButton({
     mutationFn: () => api.computeArchitecture(repoId),
     // POST now runs synchronously (see ckg/api/routes/architecture.py).
     // Enter `computing` on mutate so the elapsed-time banner shows for
-    // the whole duration of the request; flip back to idle when the POST
-    // returns success (Neo4j already has the new clusters at that point,
-    // we just need to refetch the GET).
+    // the whole duration of the request; flip back to idle (with the
+    // outcome) when the POST returns success.
     onMutate: () => onState({ kind: "computing", startedAt: Date.now() }),
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["arch", repoId] });
       qc.invalidateQueries({ queryKey: ["arch-warnings", repoId] });
-      onState({ kind: "idle" });
+      onState({
+        kind: "idle",
+        lastResult: {
+          clusters: data.clusters,
+          files: data.files,
+          edges: data.edges,
+          warnings: data.warnings,
+          edge_source: data.edge_source,
+          computed_at: data.computed_at,
+        },
+      });
     },
     onError: (err: Error) =>
       onState({
@@ -252,26 +274,51 @@ function Content({
       )}
       {!hasMap && computeState.kind === "idle" && (
         <>
-          {arch.data?.edge_source === "no_files" ? (
-            <div className="rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
-              <b>{repoId}</b> has 0 source files in the graph. The latest
-              ingest finished, but the configured branch contained nothing
-              parseable. Edit this repo's branch on the{" "}
-              <a
-                href={`/repos/${encodeURIComponent(repoId)}`}
-                className="underline"
-              >
-                repo page
-              </a>{" "}
-              and trigger a full ingest first.
-            </div>
-          ) : (
-            <p className="text-slate-400">
-              No architecture map yet. Click <b>Recompute</b> above — it
-              runs synchronously in the API and the map shows here as soon
-              as it lands.
-            </p>
-          )}
+          {(() => {
+            // Prefer the freshly-computed outcome on the state machine
+            // because the empty no_files path doesn't write anything that
+            // the GET endpoint can read back — so arch.data.edge_source
+            // stays null and the GET alone can't tell "computed and empty"
+            // from "never computed".
+            const lastResult = computeState.lastResult;
+            const edgeSource = lastResult?.edge_source ?? arch.data?.edge_source;
+            if (edgeSource === "no_files") {
+              return (
+                <div className="rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+                  <b>{repoId}</b> has 0 source files in the graph. The
+                  most-recent ingest finished, but the configured branch
+                  contained nothing parseable. Open the{" "}
+                  <a
+                    href={`/repos/${encodeURIComponent(repoId)}`}
+                    className="underline"
+                  >
+                    repo page
+                  </a>{" "}
+                  to set the right branch and run a full ingest, then come
+                  back and click Recompute.
+                </div>
+              );
+            }
+            if (lastResult && lastResult.clusters === 0) {
+              return (
+                <div className="rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+                  Recompute finished — found <b>{lastResult.files}</b>{" "}
+                  files but <b>0</b> file→file edges to cluster on. The
+                  call / import graph is too thin for this repo to cluster
+                  on precisely (common for languages with partial parser
+                  coverage). Re-running an ingest on the right branch
+                  usually unlocks it.
+                </div>
+              );
+            }
+            return (
+              <p className="text-slate-400">
+                No architecture map yet. Click <b>Recompute</b> above — it
+                runs synchronously in the API and the map shows here as
+                soon as it lands.
+              </p>
+            );
+          })()}
         </>
       )}
       {hasMap && arch.data && (
