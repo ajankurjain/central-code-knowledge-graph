@@ -159,7 +159,7 @@ Health check from outside:
 
 ```bash
 curl http://localhost:8080/readyz
-# {"ready":true,"checks":{"neo4j":true,"postgres":true,"redis":true},"version":"0.1.2"}
+# {"ready":true,"checks":{"neo4j":true,"postgres":true,"redis":true},"version":"0.1.3"}
 ```
 
 URLs:
@@ -396,11 +396,12 @@ Full reference: [docs/api.md](docs/api.md).
 
 ## Releases
 
-Current: **v0.1.2** on [PyPI](https://pypi.org/project/central-code-knowledge-graph/) ·
+Current: **v0.1.3** on [PyPI](https://pypi.org/project/central-code-knowledge-graph/) ·
 full notes at [Releases](https://github.com/ajankurjain/central-code-knowledge-graph/releases).
 
 | Version | Highlights |
 |---|---|
+| **v0.1.3** | Self-hosted GitLab support (`gitlab_instance` kind + bring-your-own-base-URL). Worker now scrubs `<scheme>://user:pw@…` userinfo and bare GitHub / GitLab PAT shapes before persisting clone errors, so a failed `git clone https://oauth2:glpat-…@host/path` no longer leaks the token into `ingest_runs.error`. `credentialed_clone_url_for_repo` falls back to a host-aware token injector when the source's `kind` is unknown to the running worker. Per-source live progress bar on `/sources` driven by a new `GET /v1/sources/{id}/progress` endpoint (indexed / queued / running / failed counts + last-sync / last-ingest timestamps + 5 s auto-poll while in flight). New `ckg.reconcile_stuck_ingests` beat task every 60 s — re-publishes orphaned `queued` rows (DB-vs-broker desync) and reaps zombie `running` rows so the progress bar never silently freezes. Searchable repo combobox on `/repos`, `/arch`, `/graph` with `INDEXED` / `NOT INDEXED` badges + refresh icon. Dashboard and `/repos` table now paginated (10 / 25 per page) with id / url / language filter. `/graph` shows top-20 most-connected functions as click-to-fill entry points when no qname is set — backed by `GET /v1/graph/entry_points` — plus a back-to-functions button. `tree-sitter>=0.25.2,<0.26` (csharp grammar v15 ABI). `python` parser detects `async` either as the node type OR as a child keyword. `lua` parser covers modern (`function_declaration`, `local_function`) and legacy node types. |
 | **v0.1.2** | Per-repo PAT for cloning private repos (`POST /v1/repos {token}` + `PUT …/credentials` + Credentials panel in the web UI + `ckg repo register --token` / `ckg repo credentials`). Idempotent `ADD COLUMN IF NOT EXISTS` migration so existing installs pick up new columns on restart. Per-row ingest feedback on the /repos page. Runs-table error column now collapsible with full text. Web register form auto-slugifies with live preview. `tree-sitter>=0.24,<0.25` (csharp grammar v15). |
 | **v0.1.1** | Live-verified runtime fixes: Dockerfile installs `[server]` extras so `celery` is on the worker's PATH; Neo4j healthcheck creds exposed via `CKG_HEALTHCHECK_*` (was conflicting with Neo4j's `NEO4J_*`-as-setting parsing); strawberry-graphql `graphql_ide=` arg compatibility; `tree-sitter-language-pack` pinned to the 0.x line where the parser objects still expose `.parse()`. |
 | **v0.1.0** | Initial release. |
