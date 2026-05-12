@@ -95,9 +95,13 @@ Full design rationale: [docs/adr/0001-architecture.md](docs/adr/0001-architectur
 
 ### 1. Prerequisites
 
-- Docker Desktop (macOS / Windows) or Docker Engine + Compose v2 (Linux)
-- 8 GB free RAM recommended
-- Python 3.11+ on the host **only if** you want the CLI locally
+| | Required | Notes |
+|---|---|---|
+| Docker | **Docker Desktop** (macOS / Windows) or **Docker Engine + Compose v2** (Linux) | Must be **running** before step 3. Confirm with `docker info`. |
+| RAM | 8 GB free | Neo4j wants 2 GB, sentence-transformers ~500 MB on first warmup |
+| Disk | ~3 GB free | Base images (Neo4j, Postgres, Redis, Python, Node) total ~2 GB. Plus your repo clones under the `repo_data` volume. |
+| Network | Outbound HTTPS | First boot pulls images from Docker Hub + npm + PyPI |
+| Python | 3.11+ (host) | **Only** if you want to install the CLI on your laptop. Not needed otherwise — `make up` runs everything in containers. |
 
 ### 2. Clone and configure
 
@@ -107,73 +111,135 @@ cd central-code-knowledge-graph
 cp .env.example .env
 ```
 
-Edit `.env` and replace every `change-me-*`. Generate strong values with:
+Replace every `change-me-*` in `.env` with strong randoms — the snippet below
+generates a full, ready-to-go `.env` for local dev in one shot:
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"
+python3 - <<'PY'
+import secrets, base64, os
+subs = {
+    "change-me-please-bootstrap-token": secrets.token_urlsafe(32),
+    "change-me-please-fernet-key":     base64.urlsafe_b64encode(os.urandom(32)).decode(),
+    "change-me-neo4j-password":        secrets.token_urlsafe(24),
+    "change-me-postgres-password":     secrets.token_urlsafe(24),
+}
+env = open(".env").read()
+for k, v in subs.items():
+    env = env.replace(k, v)
+open(".env", "w").write(env)
+PY
+chmod 600 .env
 ```
+
+> ⚠️  Keep `.env` out of git — it's already in `.gitignore`, the pre-commit
+> hook (`scripts/audit-secrets.sh`) refuses any commit that contains it.
 
 ### 3. Start the stack
 
+Make sure Docker Desktop is running first (`docker info` should succeed), then:
+
 ```bash
 make up
+# or: docker compose up -d --build
 ```
 
-(or `docker compose up -d`)
+**First boot takes 5–10 minutes** — it pulls ~2 GB of base images and builds
+the api / worker / web / beat images locally. Subsequent `make up` runs are
+~10 seconds.
 
-First boot is 1–3 minutes (image pulls + Neo4j schema init).
+Confirm everything came up healthy:
+
+```bash
+docker compose ps
+# all containers should show "running" and (healthy):
+# ckg-api-1, ckg-beat-1, ckg-neo4j-1, ckg-postgres-1, ckg-redis-1, ckg-web-1, ckg-worker-1
+```
+
+Health check from outside:
 
 ```bash
 curl http://localhost:8080/readyz
-# {"ready": true, "checks": {"neo4j": true, "postgres": true, "redis": true}, ...}
+# {"ready":true,"checks":{"neo4j":true,"postgres":true,"redis":true},"version":"0.1.1"}
 ```
 
-Open the auto-generated API docs: <http://localhost:8080/docs>
+URLs:
 
-Open the web UI: <http://localhost:3000> (paste an API token to sign in).
+| Service | URL |
+|---|---|
+| **Web UI** | <http://localhost:3000> |
+| API (Swagger UI) | <http://localhost:8080/docs> |
+| GraphQL (GraphiQL) | <http://localhost:8080/v1/graphql> |
+| Neo4j Browser | <http://localhost:7474> (login `neo4j` / value of `NEO4J_PASSWORD` from `.env`) |
+| Postgres | `localhost:5433` (mapped off default port to avoid clashes) |
+| Redis | `localhost:6379` |
 
-### 4. Install the CLI
+### 4. Sign in
 
-From PyPI (recommended — CLI-only, light install):
+Grab the **bootstrap token** from `.env`:
 
 ```bash
+grep ^CKG_BOOTSTRAP_TOKEN .env | cut -d= -f2-
+```
+
+Then either:
+
+**a) Use the web UI** — open <http://localhost:3000/login>, paste the token,
+click **Sign in**. The Dashboard lights up.
+
+**b) Use the `ckg` CLI**:
+
+```bash
+# From PyPI (light install — CLI only, talks to the Docker server):
 pip install central-code-knowledge-graph
-# or, isolated:
+
+# Or pipx for an isolated install:
 pipx install central-code-knowledge-graph
-```
 
-Or from a checkout for development:
-
-```bash
-pip install -e .
-# Or with everything (server stack + dev tools):
+# Or editable install from a checkout for development:
 pip install -e '.[dev]'
+
+# Then:
+export CKG_SERVER=http://localhost:8080
+ckg login --token "$(grep ^CKG_BOOTSTRAP_TOKEN .env | cut -d= -f2-)"
+ckg status        # should print graph counts
 ```
 
-Then point the CLI at your server and sign in with the bootstrap token:
+The bootstrap token has `admin` scope and is meant for one-time setup —
+**mint a scoped token and use that going forward**:
 
 ```bash
-export CKG_SERVER=http://localhost:8080
-ckg login --token "$(grep ^CKG_BOOTSTRAP_TOKEN .env | cut -d= -f2)"
-
-# Mint a real token, then re-login with it:
 ckg token create my-laptop --scope repo:read --scope repo:write
-ckg login --token ckg_xxxxxxxxxxxxxxxxxxxx
+# copy the printed `ckg_…` token, then:
+ckg login --token ckg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ### 5. Ingest your first repo
 
 ```bash
+# Pick a local repo to index. `file:///abs/path` clones-in-place, no network.
 ckg repo register my-repo file:///Users/you/code/my-repo --branch main
-ckg repo ingest    my-repo
-ckg repo runs      my-repo          # watch progress
+
+# Run a full ingest.
+ckg repo ingest    my-repo --full
+ckg repo runs      my-repo                 # watch progress; a small repo finishes in seconds
+
+# Verify the graph populated.
 ckg graph stats
-ckg search keyword "ingest pipeline"
+# → {"nodes": 3288, "edges": 6676, "repos": 1, "files": 80}  (example)
+
+# Search.
+ckg search keyword  "ingest pipeline"
 ckg search semantic "where do we parse Tree-sitter trees?"
-ckg graph callers     my-repo my.module.foo --depth 2
-ckg graph blast       my-repo src/foo/bar.py            # what breaks if bar.py changes
-ckg graph downstream  my-repo src/foo/bar.py            # what bar.py depends on
+
+# Structural queries.
+ckg graph callers    my-repo my.module.foo --depth 2
+ckg graph blast      my-repo src/foo/bar.py        # files that break if bar.py changes
+ckg graph downstream my-repo src/foo/bar.py        # files bar.py depends on
 ```
+
+You can do the same from the web UI under **Repos** → **Register** → fill the
+form, then click **ingest Δ** or **full reparse**. Watch progress on the repo
+detail page (auto-refreshes while a run is in flight).
 
 ### 5b. Or pull an entire org / group / workspace at once
 
@@ -256,6 +322,38 @@ browser hits the API directly using the bearer token kept in
 | Cursor | [integrations/cursor/README.md](integrations/cursor/README.md) |
 | VS Code (Copilot Chat / Cline / Roo Code) | [integrations/vscode/README.md](integrations/vscode/README.md) |
 | Claude Code | [integrations/claude-code/README.md](integrations/claude-code/README.md) |
+
+### Day-2 operations
+
+```bash
+make logs                 # tail every service
+make restart              # restart api + worker only
+docker compose stop       # park everything; data volumes persist
+make up                   # bring it back
+make clean                # WARNING: removes volumes — wipes graph + Postgres
+make psql                 # psql shell inside the postgres container
+make neo4j-shell          # cypher-shell inside the neo4j container
+```
+
+### Troubleshooting
+
+Things that bit me during local setup — keep this open the first time you run.
+
+| Symptom | Diagnosis / fix |
+|---|---|
+| `docker: command not found` | Docker Desktop isn't on PATH. macOS shortcut: `export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"`. |
+| `docker info` fails / "Cannot connect to the Docker daemon" | Docker Desktop is installed but not running. Launch the Docker app and wait ~10s. |
+| `make up` errors with `neo4j password required` | You skipped step 2 — `.env` doesn't exist (or still has `change-me-*` placeholders for the strict-required vars). Re-run the Python one-liner in step 2. |
+| `ckg-web-1` stays in **Created** state and never starts | The image was never built. Run `docker compose build web && docker compose up -d web`. |
+| `ckg-neo4j-1` flaps **Restarting** with `Unrecognized setting. No declared setting with name: PASSWORD` | Old compose file. Pull main — fixed in v0.1.1 by renaming the healthcheck env vars to `CKG_HEALTHCHECK_*`. |
+| API container loops with `TypeError: APIRouter.__init__() got an unexpected keyword argument 'graphiql'` | strawberry-graphql renamed the arg. Fixed in v0.1.1. Pull main. |
+| Worker / beat crash with `exec: "celery": executable file not found in $PATH` | Dockerfile didn't install `[server]` extras. Fixed in v0.1.1. Pull main + `docker compose build --no-cache worker beat`. |
+| Ingest reports `files_skipped` for every file, `files_parsed: 0` | tree-sitter-language-pack 1.x compatibility issue. Fixed in v0.1.1 by pinning to 0.7-0.9. Pull main + rebuild api/worker. |
+| GitHub README badge stuck on a stale version | GitHub's camo proxy caches images by URL. Bump the URL slightly (e.g. change `cacheSeconds=N` to a different N) to force a refetch. |
+| Forgot the bootstrap token | `grep ^CKG_BOOTSTRAP_TOKEN .env \| cut -d= -f2-` |
+| Want to wipe the graph and start over | `make clean && make up && python … (regenerate .env)`. Note: this also drops the Postgres data, so all minted tokens go too. |
+| Forgot which port is which | All ports are configurable via `.env` (`CKG_API_PORT`, `CKG_WEB_PORT`). Defaults: 8080 / 3000 / 7474 (Neo4j) / 5433 (Postgres) / 6379 (Redis). |
+| Run integration tests against the live stack | `docker compose exec api pytest tests/integration/ -q` (after `make up`). |
 
 ## What the graph looks like
 
