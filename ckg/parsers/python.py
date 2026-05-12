@@ -68,13 +68,21 @@ def _walk(node, source: bytes, module_qname: str, parents: list[str], result: Pa
             qname = ".".join([module_qname, *parents, fname]) if fname else module_qname
             is_method = bool(parents)
             body_text = node_text(source, child)
+            # Older tree-sitter-python grammars emitted a separate
+            # `async_function_definition` node; newer ones (≥ ABI 14) just
+            # emit `function_definition` with an `async` keyword child.
+            # Cover both.
+            is_async = (
+                child.type == "async_function_definition"
+                or any(c.type == "async" for c in child.children)
+            )
             fn = FunctionNode(
                 name=fname or "?",
                 qualified_name=qname,
                 start_line=child.start_point[0] + 1,
                 end_line=child.end_point[0] + 1,
                 is_method=is_method,
-                is_async=(child.type == "async_function_definition"),
+                is_async=is_async,
                 doc=_docstring(child, source),
                 body=body_text,
                 body_sha=hashlib.sha1(body_text.encode("utf-8", "replace")).hexdigest(),

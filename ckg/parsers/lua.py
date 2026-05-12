@@ -14,7 +14,19 @@ from ckg.parsers._generic import (
 from ckg.parsers._ts import get_ts_parser, node_text
 from ckg.parsers.base import ImportEdge, ParseResult, register_parser
 
-_CALL_TYPES = {"function_call"}
+_CALL_TYPES = {"function_call", "function_call_expression"}
+
+# Modern tree-sitter-lua emits `function_declaration`, `local_function`, and
+# `function_definition` (anonymous). Older grammars used the `*_statement`
+# suffix. Cover both so the parser works across versions.
+_FN_DECL_TYPES = {
+    "function_declaration",
+    "function_declaration_statement",
+    "function_definition_statement",
+    "local_function",
+    "local_function_declaration_statement",
+    "local_function_definition_statement",
+}
 
 
 @dataclass
@@ -35,7 +47,7 @@ def _walk(node, source: bytes, module_qname: str, result: ParseResult) -> None:
     stack = [node]
     while stack:
         n = stack.pop()
-        if n.type in ("function_declaration_statement", "function_definition_statement", "local_function_declaration_statement"):
+        if n.type in _FN_DECL_TYPES:
             name = _ident_child(n, source)
             fn_qname = emit_function(
                 node=n, source=source, name=name or "?",
@@ -65,8 +77,19 @@ def _walk(node, source: bytes, module_qname: str, result: ParseResult) -> None:
 
 
 def _ident_child(node, source: bytes) -> str:
+    # The function name lives in different places depending on grammar version:
+    #   modern: `name` field → identifier / dot_index_expression
+    #   older:  first named_child of certain types
+    name = node.child_by_field_name("name")
+    if name is not None:
+        return node_text(source, name)
     for c in node.named_children:
-        if c.type in ("identifier", "function_name", "method_index_expression", "dot_index_expression"):
+        if c.type in (
+            "identifier",
+            "function_name",
+            "method_index_expression",
+            "dot_index_expression",
+        ):
             return node_text(source, c)
     return ""
 
