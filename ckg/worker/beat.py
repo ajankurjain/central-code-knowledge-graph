@@ -27,5 +27,11 @@ celery_app.conf.beat_schedule = {
         "task": "ckg.reconcile_stuck_ingests",
         "schedule": schedule(run_every=60.0),
     },
+    # Slide the api_calls window forward. Hourly is plenty — the usage UI
+    # only reads the last 24h.
+    "prune-api-calls": {
+        "task": "ckg.prune_api_calls",
+        "schedule": schedule(run_every=3600.0),
+    },
 }
 celery_app.conf.timezone = "UTC"

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import SQLAlchemyError
 
 from ckg import __version__
 from ckg.api.routes import analytics as analytics_routes
@@ -69,6 +71,56 @@ def create_app() -> FastAPI:
     app.include_router(webhooks_routes.router, prefix="/v1")
     app.include_router(architecture_routes.router, prefix="/v1")
     app.include_router(analytics_routes.router, prefix="/v1")
+
+    # Per-request log used by /v1/analytics/usage. Has to live below the
+    # route registrations because we read `request.scope["route"]` for the
+    # parameterised path. Skips meta-endpoints (health, the analytics
+    # endpoints themselves — otherwise the UI polling would dominate the
+    # data) so the log reflects real client usage.
+    _SKIP_PATHS: set[str] = {"/healthz", "/readyz", "/"}
+    _SKIP_PREFIXES = ("/v1/analytics/", "/v1/graphql", "/docs", "/openapi", "/static")
+
+    @app.middleware("http")
+    async def log_api_calls(request: Request, call_next):
+        t0 = time.perf_counter()
+        response = await call_next(request)
+        try:
+            path = request.url.path
+            if path in _SKIP_PATHS or any(path.startswith(p) for p in _SKIP_PREFIXES):
+                return response
+
+            principal = getattr(request.state, "principal", None)
+            # Resolve the route TEMPLATE (e.g. /v1/repos/{repo_id}) rather
+            # than the raw path so per-repo URLs aggregate together. Falls
+            # back to the raw path for 404s where no route matched.
+            route_obj = request.scope.get("route")
+            route = getattr(route_obj, "path", None) or path
+
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+
+            # Late import: avoids circular load at startup. Cheap once warm.
+            from ckg.db.postgres import ApiCall, get_sessionmaker
+
+            Session = get_sessionmaker()
+            with Session() as s:
+                s.add(
+                    ApiCall(
+                        token_id=principal.token_id if principal else None,
+                        token_name=principal.name if principal else "anonymous",
+                        method=request.method,
+                        route=route[:200],
+                        status=response.status_code,
+                        duration_ms=elapsed_ms,
+                    )
+                )
+                s.commit()
+        except SQLAlchemyError:
+            # A logging failure must never break a real request.
+            log.warning("api_call_log_db_error", exc_info=True)
+        except Exception:
+            log.warning("api_call_log_failed", exc_info=True)
+        return response
+
     return app
 
 

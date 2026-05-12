@@ -17,6 +17,7 @@ from sqlalchemy import func, select, text
 
 from ckg.auth import Principal, require_repo_read
 from ckg.db.postgres import (
+    ApiCall,
     ApiToken,
     BulkSource,
     IngestRun,
@@ -71,6 +72,165 @@ class IntegrationsSummary(BaseModel):
     tokens: TokensAnalytics
     repos: ReposAnalytics
     ingests: IngestAnalytics
+
+
+class TokenUsageRow(BaseModel):
+    token_id: int | None
+    token_name: str
+    calls_24h: int
+    last_call_at: datetime | None
+    last_status: int | None
+
+
+class EndpointUsageRow(BaseModel):
+    route: str
+    method: str
+    calls_24h: int
+    p95_duration_ms: int
+    error_rate_pct: float
+
+
+class ApiCallRow(BaseModel):
+    ts: datetime
+    token_name: str
+    method: str
+    route: str
+    status: int
+    duration_ms: int
+
+
+class UsageSummary(BaseModel):
+    """Live usage analytics for the /integrations page.
+
+    All counts cover the trailing 24 h window. Empty when no requests have
+    been made in that window — common right after deploy until traffic
+    accumulates.
+    """
+
+    window_hours: int
+    total_calls: int
+    calls_per_hour: float  # last_24h_total / 24 (display convenience)
+    distinct_tokens: int
+    error_rate_pct: float
+    top_tokens: list[TokenUsageRow]
+    top_endpoints: list[EndpointUsageRow]
+    recent: list[ApiCallRow]
+
+
+@router.get("/usage", response_model=UsageSummary)
+def usage(_: Principal = Depends(require_repo_read)) -> UsageSummary:
+    """Per-token + per-endpoint usage over the last 24 h."""
+    Session = get_sessionmaker()
+    now = datetime.now(UTC)
+    day_ago = now - timedelta(hours=24)
+
+    with Session() as s:
+        total = s.execute(
+            select(func.count(ApiCall.id)).where(ApiCall.ts >= day_ago)
+        ).scalar_one()
+        errors = s.execute(
+            select(func.count(ApiCall.id)).where(
+                ApiCall.ts >= day_ago, ApiCall.status >= 400,
+            )
+        ).scalar_one()
+        distinct_tokens = s.execute(
+            select(func.count(func.distinct(ApiCall.token_name))).where(
+                ApiCall.ts >= day_ago,
+            )
+        ).scalar_one()
+
+        # Top tokens by call volume.
+        token_rows = s.execute(
+            text(
+                """
+                SELECT
+                  token_id,
+                  COALESCE(token_name, 'anonymous')        AS token_name,
+                  COUNT(*)                                  AS calls,
+                  MAX(ts)                                   AS last_call,
+                  (ARRAY_AGG(status ORDER BY id DESC))[1]   AS last_status
+                FROM api_calls
+                WHERE ts >= :since
+                GROUP BY token_id, token_name
+                ORDER BY calls DESC
+                LIMIT 10
+                """
+            ),
+            {"since": day_ago},
+        ).all()
+        top_tokens = [
+            TokenUsageRow(
+                token_id=row.token_id,
+                token_name=row.token_name,
+                calls_24h=row.calls,
+                last_call_at=row.last_call,
+                last_status=row.last_status,
+            )
+            for row in token_rows
+        ]
+
+        # Top endpoints — `percentile_cont` gives us an honest p95 instead of
+        # an average that gets swamped by the bulk of fast calls.
+        endpoint_rows = s.execute(
+            text(
+                """
+                SELECT
+                  route,
+                  method,
+                  COUNT(*)                                                         AS calls,
+                  COALESCE(
+                    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms), 0
+                  )::INT                                                            AS p95,
+                  100.0 * SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) / COUNT(*) AS err_pct
+                FROM api_calls
+                WHERE ts >= :since
+                GROUP BY route, method
+                ORDER BY calls DESC
+                LIMIT 12
+                """
+            ),
+            {"since": day_ago},
+        ).all()
+        top_endpoints = [
+            EndpointUsageRow(
+                route=row.route,
+                method=row.method,
+                calls_24h=row.calls,
+                p95_duration_ms=int(row.p95),
+                error_rate_pct=round(float(row.err_pct), 1),
+            )
+            for row in endpoint_rows
+        ]
+
+        # Live tail — newest 20 calls.
+        recent_rows = s.execute(
+            select(ApiCall).order_by(ApiCall.id.desc()).limit(20)
+        ).scalars().all()
+        recent = [
+            ApiCallRow(
+                ts=r.ts,
+                token_name=r.token_name,
+                method=r.method,
+                route=r.route,
+                status=r.status,
+                duration_ms=r.duration_ms,
+            )
+            for r in recent_rows
+        ]
+
+    error_rate = (
+        round(100.0 * float(errors) / float(total), 1) if total else 0.0
+    )
+    return UsageSummary(
+        window_hours=24,
+        total_calls=int(total),
+        calls_per_hour=round(float(total) / 24.0, 1),
+        distinct_tokens=int(distinct_tokens),
+        error_rate_pct=error_rate,
+        top_tokens=top_tokens,
+        top_endpoints=top_endpoints,
+        recent=recent,
+    )
 
 
 @router.get("/summary", response_model=IntegrationsSummary)

@@ -16,6 +16,7 @@ import type {
   SourceRepo,
   Stats,
   TokenInfo,
+  UsageSummary,
   Warning,
 } from "./types";
 
@@ -63,6 +64,7 @@ export const api = {
   // Aggregated counts for the /integrations page + dashboard glance row.
   // Cheap — one pass over a few small Postgres tables.
   integrationsSummary: () => req<IntegrationsSummary>("/v1/analytics/summary"),
+  usageSummary: () => req<UsageSummary>("/v1/analytics/usage"),
 
   // Token management (admin-only).
   tokens: () => req<TokenInfo[]>("/v1/tokens"),

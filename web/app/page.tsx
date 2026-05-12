@@ -25,17 +25,32 @@ export default function Dashboard() {
 
 // Quick-glance integration counts. Mirrors the headline metrics on
 // /integrations so the operator gets a status check straight from the
-// home page without losing the repos table below.
+// home page. Now centred on USAGE (API call volume, top caller, error
+// rate) — operational health (ingest queue, etc.) is one click away on
+// /integrations.
 function IntegrationsRow() {
-  const { data, isLoading, error } = useQuery({
+  const summary = useQuery({
     queryKey: ["integrations-summary"],
     queryFn: api.integrationsSummary,
     refetchInterval: 30_000,
   });
-  if (isLoading || error || !data) return null;
-  const successRate = data.ingests.success_rate_pct;
-  const successTone =
-    successRate >= 90 ? "text-emerald-300" : successRate >= 60 ? "text-amber-300" : "text-rose-300";
+  const usage = useQuery({
+    queryKey: ["usage-summary"],
+    queryFn: api.usageSummary,
+    refetchInterval: 30_000,
+  });
+  if (summary.isLoading || summary.error || !summary.data) return null;
+  const s = summary.data;
+  const u = usage.data;
+  const errTone =
+    !u
+      ? "text-slate-400"
+      : u.error_rate_pct > 20
+      ? "text-rose-300"
+      : u.error_rate_pct > 5
+      ? "text-amber-300"
+      : "text-emerald-300";
+  const topCaller = u?.top_tokens[0];
   return (
     <section className="mb-8">
       <div className="mb-3 flex items-center justify-between">
@@ -46,32 +61,36 @@ function IntegrationsRow() {
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatsCard
+          label="API calls 24h"
+          value={u ? u.total_calls.toLocaleString() : "—"}
+          hint={
+            u ? (
+              <span className={errTone}>
+                {u.calls_per_hour}/hr · {u.error_rate_pct}% errors
+              </span>
+            ) : (
+              "warming up"
+            )
+          }
+        />
+        <StatsCard
+          label="Top caller"
+          value={topCaller ? topCaller.calls_24h.toLocaleString() : "—"}
+          hint={
+            topCaller
+              ? `${topCaller.token_name} (${u?.distinct_tokens ?? 0} active)`
+              : "no traffic yet"
+          }
+        />
+        <StatsCard
           label="Sources"
-          value={data.sources.total.toLocaleString()}
-          hint={`${data.sources.with_webhook} webhook${data.sources.with_webhook === 1 ? "" : "s"} · ${data.sources.with_schedule} scheduled`}
+          value={s.sources.total.toLocaleString()}
+          hint={`${s.sources.with_webhook} webhook${s.sources.with_webhook === 1 ? "" : "s"} · ${s.sources.with_schedule} scheduled`}
         />
         <StatsCard
           label="API tokens"
-          value={data.tokens.active.toLocaleString()}
-          hint={`${data.tokens.used_in_last_24h} used in 24h`}
-        />
-        <StatsCard
-          label="Ingest 24h"
-          value={data.ingests.last_24h_total.toLocaleString()}
-          hint={
-            <span className={successTone}>
-              {successRate}% success · {data.ingests.queue_depth} queued
-            </span>
-          }
-        />
-        <StatsCard
-          label="Languages"
-          value={data.repos.by_language.length.toLocaleString()}
-          hint={
-            data.repos.by_language.length > 0
-              ? `top: ${data.repos.by_language.slice(0, 3).map((l) => l.key).join(", ")}`
-              : "none yet"
-          }
+          value={s.tokens.active.toLocaleString()}
+          hint={`${s.tokens.used_in_last_24h} used in 24h`}
         />
       </div>
     </section>

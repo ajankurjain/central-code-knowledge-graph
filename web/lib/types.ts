@@ -112,6 +112,42 @@ export type IntegrationsSummary = {
   };
 };
 
+export type TokenUsageRow = {
+  token_id: number | null;
+  token_name: string;
+  calls_24h: number;
+  last_call_at: string | null;
+  last_status: number | null;
+};
+
+export type EndpointUsageRow = {
+  route: string;
+  method: string;
+  calls_24h: number;
+  p95_duration_ms: number;
+  error_rate_pct: number;
+};
+
+export type ApiCallRow = {
+  ts: string;
+  token_name: string;
+  method: string;
+  route: string;
+  status: number;
+  duration_ms: number;
+};
+
+export type UsageSummary = {
+  window_hours: number;
+  total_calls: number;
+  calls_per_hour: number;
+  distinct_tokens: number;
+  error_rate_pct: number;
+  top_tokens: TokenUsageRow[];
+  top_endpoints: EndpointUsageRow[];
+  recent: ApiCallRow[];
+};
+
 export type ReadyzResp = {
   ready: boolean;
   checks: Record<string, boolean>;

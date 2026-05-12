@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 
 from ckg.config import get_settings
@@ -65,10 +65,17 @@ def _bootstrap_match(candidate: str) -> bool:
 
 
 def authenticate(
+    request: Request,
     authorization: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> Principal:
-    """Resolve a Principal from either `Authorization: Bearer <tok>` or `X-API-Key`."""
+    """Resolve a Principal from either `Authorization: Bearer <tok>` or `X-API-Key`.
+
+    Side-effect: stashes the resolved Principal on `request.state.principal`
+    so the request-logging middleware (api/main.py) can attribute the call
+    to a token without re-parsing the header. Failed auth leaves
+    request.state unset, which the middleware treats as "anonymous".
+    """
 
     candidate: str | None = None
     if authorization and authorization.lower().startswith("bearer "):
@@ -81,7 +88,9 @@ def authenticate(
 
     # Bootstrap token shortcut
     if _bootstrap_match(candidate):
-        return Principal(name="bootstrap", scopes=frozenset({"admin"}), token_id=None)
+        p = Principal(name="bootstrap", scopes=frozenset({"admin"}), token_id=None)
+        request.state.principal = p
+        return p
 
     # Look up in Postgres. We hash all non-revoked tokens and verify — at small scale
     # that is fine; at large scale you'd add a fast lookup column (e.g. an HMAC of the token).
@@ -93,7 +102,9 @@ def authenticate(
         for row in rows:
             if verify_token_hash(row.token_hash, candidate):
                 scopes = frozenset(p.strip() for p in row.scopes.split("|") if p.strip())
-                return Principal(name=row.name, scopes=scopes, token_id=row.id)
+                p = Principal(name=row.name, scopes=scopes, token_id=row.id)
+                request.state.principal = p
+                return p
 
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid API token")
 

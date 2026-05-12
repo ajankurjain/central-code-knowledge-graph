@@ -18,7 +18,7 @@ import { Navbar } from "@/components/Navbar";
 import { TokenGate } from "@/components/TokenGate";
 import { Spinner } from "@/components/Spinner";
 import { api, API_BASE } from "@/lib/api";
-import type { CountByKey } from "@/lib/types";
+import type { CountByKey, UsageSummary } from "@/lib/types";
 
 export default function IntegrationsPage() {
   return (
@@ -35,7 +35,8 @@ export default function IntegrationsPage() {
         <BackendServices />
         <ServiceEndpoints />
         <ConnectedIntegrations />
-        <Analytics />
+        <UsageAnalytics />
+        <CatalogAnalytics />
       </main>
     </TokenGate>
   );
@@ -380,9 +381,191 @@ function Bullet({ ok, text, fade }: { ok: boolean; text: string; fade?: boolean 
   );
 }
 
-// ── 4. Analytics: language histogram + ingest activity ───────────────────
+// ── 4. Usage analytics — how the API is actually being called ────────────
 
-function Analytics() {
+function UsageAnalytics() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["usage-summary"],
+    queryFn: api.usageSummary,
+    refetchInterval: 15_000,
+  });
+  if (isLoading) return <Spinner />;
+  if (error) return <ErrorBox err={error as Error} />;
+  if (!data) return null;
+  return (
+    <section className="space-y-3">
+      <SectionHeader
+        title={`API usage · last ${data.window_hours}h`}
+        subtitle="What AI clients (and the web UI) are actually calling. Auto-refreshes every 15 s."
+      />
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Tile label="total calls" value={data.total_calls} tone="violet" />
+        <Tile label="calls / hour" value={data.calls_per_hour} tone="slate" />
+        <Tile label="active tokens" value={data.distinct_tokens} tone="emerald" />
+        <Tile
+          label="error rate"
+          value={`${data.error_rate_pct}%`}
+          tone={data.error_rate_pct > 20 ? "rose" : data.error_rate_pct > 5 ? "amber" : "emerald"}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <TopTokensCard rows={data.top_tokens} />
+        <TopEndpointsCard rows={data.top_endpoints} />
+      </div>
+
+      <RecentCallsCard rows={data.recent} />
+    </section>
+  );
+}
+
+function TopTokensCard({ rows }: { rows: UsageSummary["top_tokens"] }) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+        <SectionHeader title="Top callers" dense />
+        <p className="text-xs text-slate-500">No traffic in the last 24 h yet.</p>
+      </div>
+    );
+  }
+  const max = rows[0]?.calls_24h ?? 1;
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+      <SectionHeader title="Top callers" subtitle="by request count" dense />
+      <ul className="space-y-1.5">
+        {rows.map((t) => (
+          <li
+            key={`${t.token_id ?? "anon"}-${t.token_name}`}
+            className="grid grid-cols-[1fr_6rem_4rem] items-center gap-2"
+          >
+            <span className="min-w-0">
+              <span className="block truncate font-mono text-xs text-violet-200">
+                {t.token_name}
+              </span>
+              <span className="block truncate text-[10px] text-slate-500">
+                last {fmtRel(t.last_call_at)}
+                {t.last_status !== null && (
+                  <>
+                    {" · "}
+                    <StatusGlyph s={t.last_status} />
+                  </>
+                )}
+              </span>
+            </span>
+            <span className="h-2 rounded bg-slate-800">
+              <span
+                className="block h-full rounded bg-violet-500"
+                style={{ width: `${(t.calls_24h / max) * 100}%` }}
+              />
+            </span>
+            <span className="text-right font-mono text-xs tabular-nums text-slate-300">
+              {t.calls_24h.toLocaleString()}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function TopEndpointsCard({ rows }: { rows: UsageSummary["top_endpoints"] }) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+        <SectionHeader title="Top endpoints" dense />
+        <p className="text-xs text-slate-500">No traffic in the last 24 h yet.</p>
+      </div>
+    );
+  }
+  const max = rows[0]?.calls_24h ?? 1;
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+      <SectionHeader title="Top endpoints" subtitle="calls · p95 latency · error rate" dense />
+      <ul className="space-y-1.5">
+        {rows.map((e) => (
+          <li key={`${e.method} ${e.route}`}>
+            <div className="grid grid-cols-[3rem_1fr_4rem] items-center gap-2">
+              <span className="rounded bg-slate-800 px-1 py-0.5 text-center font-mono text-[10px] text-slate-300">
+                {e.method}
+              </span>
+              <span className="truncate font-mono text-[11px] text-violet-200" title={e.route}>
+                {e.route}
+              </span>
+              <span className="text-right font-mono text-xs tabular-nums text-slate-300">
+                {e.calls_24h.toLocaleString()}
+              </span>
+            </div>
+            <div className="ml-[3.5rem] mt-0.5 grid grid-cols-[1fr_auto] items-center gap-2">
+              <span className="h-1.5 rounded bg-slate-800">
+                <span
+                  className="block h-full rounded bg-violet-500/70"
+                  style={{ width: `${(e.calls_24h / max) * 100}%` }}
+                />
+              </span>
+              <span className="font-mono text-[10px] text-slate-500">
+                p95 {e.p95_duration_ms}ms
+                {e.error_rate_pct > 0 && (
+                  <span className="ml-1 text-rose-300">· {e.error_rate_pct}% err</span>
+                )}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function RecentCallsCard({ rows }: { rows: UsageSummary["recent"] }) {
+  if (rows.length === 0) return null;
+  return (
+    <details className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+      <summary className="cursor-pointer text-sm uppercase tracking-wider text-slate-400">
+        Live tail · last {rows.length} requests
+      </summary>
+      <ul className="mt-3 space-y-0.5 font-mono text-[11px]">
+        {rows.map((r, i) => (
+          <li
+            key={i}
+            className="grid grid-cols-[5rem_2.5rem_8rem_1fr_4rem_3.5rem] items-center gap-2 truncate"
+          >
+            <span className="text-slate-500" title={r.ts}>
+              {fmtClock(r.ts)}
+            </span>
+            <span className="text-slate-300">{r.method}</span>
+            <span className="truncate text-violet-300" title={r.token_name}>
+              {r.token_name}
+            </span>
+            <span className="truncate text-slate-200" title={r.route}>
+              {r.route}
+            </span>
+            <span className="text-right">
+              <StatusGlyph s={r.status} />
+            </span>
+            <span className="text-right text-slate-500">{r.duration_ms}ms</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function StatusGlyph({ s }: { s: number }) {
+  const cls =
+    s >= 500
+      ? "text-rose-300"
+      : s >= 400
+      ? "text-amber-300"
+      : s >= 300
+      ? "text-sky-300"
+      : "text-emerald-300";
+  return <span className={`font-mono ${cls}`}>{s}</span>;
+}
+
+// ── 5. Catalogue analytics — what we know about (smaller, secondary) ─────
+
+function CatalogAnalytics() {
   const summary = useQuery({
     queryKey: ["integrations-summary"],
     queryFn: api.integrationsSummary,
@@ -390,21 +573,19 @@ function Analytics() {
   });
   if (summary.isLoading || !summary.data) return null;
   const repos = summary.data.repos;
-  const ingests = summary.data.ingests;
   const maxLang = repos.by_language[0]?.value ?? 1;
   return (
-    <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+    <section>
+      <SectionHeader
+        title="Catalogue"
+        subtitle={`${repos.indexed.toLocaleString()} of ${repos.total.toLocaleString()} repos indexed across ${repos.by_language.length} language${repos.by_language.length === 1 ? "" : "s"}`}
+      />
       <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-        <SectionHeader
-          title="Languages"
-          subtitle={`${repos.indexed.toLocaleString()} of ${repos.total.toLocaleString()} repos indexed`}
-          dense
-        />
         {repos.by_language.length === 0 ? (
           <p className="text-xs text-slate-500">No indexed languages yet.</p>
         ) : (
-          <ul className="space-y-1.5">
-            {repos.by_language.slice(0, 14).map((kv) => (
+          <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            {repos.by_language.slice(0, 14).map((kv: CountByKey) => (
               <li key={kv.key} className="grid grid-cols-[6rem_1fr_3rem] items-center gap-2">
                 <span className="truncate font-mono text-xs text-slate-300">
                   {kv.key}
@@ -420,40 +601,12 @@ function Analytics() {
                 </span>
               </li>
             ))}
-            {repos.by_language.length > 14 && (
-              <li className="text-[11px] text-slate-500">
-                + {repos.by_language.length - 14} more
-              </li>
-            )}
           </ul>
         )}
-      </div>
-
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-        <SectionHeader
-          title="Ingest activity (last 24h)"
-          subtitle={`${ingests.last_24h_total.toLocaleString()} runs · ${ingests.success_rate_pct}% success`}
-          dense
-        />
-        <div className="mt-2 grid grid-cols-3 gap-2 text-center">
-          <Tile label="success" value={ingests.last_24h_success} tone="emerald" />
-          <Tile label="failed" value={ingests.last_24h_failed} tone="rose" />
-          <Tile label="queued" value={ingests.queue_depth} tone="slate" />
-        </div>
-        {ingests.recent_failures.length > 0 && (
-          <details className="mt-3 rounded border border-rose-900/50 bg-rose-950/20 px-2 py-1.5 text-[11px] text-rose-200">
-            <summary className="cursor-pointer text-rose-300">
-              Most recent failures · {ingests.recent_failures.length}
-            </summary>
-            <ul className="mt-1.5 space-y-1">
-              {ingests.recent_failures.map((f, i) => (
-                <li key={`${f.repo_id}-${i}`} className="break-words">
-                  <span className="font-mono text-rose-300">{f.repo_id}</span>
-                  <span className="ml-1 text-rose-200/80">— {f.error}</span>
-                </li>
-              ))}
-            </ul>
-          </details>
+        {repos.by_language.length > 14 && (
+          <p className="mt-2 text-[11px] text-slate-500">
+            + {repos.by_language.length - 14} more
+          </p>
         )}
       </div>
     </section>
@@ -466,23 +619,35 @@ function Tile({
   tone,
 }: {
   label: string;
-  value: number;
-  tone: "emerald" | "rose" | "slate";
+  value: number | string;
+  tone: "emerald" | "rose" | "slate" | "amber" | "violet";
 }) {
   const cls =
     tone === "emerald"
       ? "border-emerald-900/40 bg-emerald-950/20 text-emerald-300"
       : tone === "rose"
       ? "border-rose-900/40 bg-rose-950/20 text-rose-300"
+      : tone === "amber"
+      ? "border-amber-900/40 bg-amber-950/20 text-amber-300"
+      : tone === "violet"
+      ? "border-violet-900/40 bg-violet-950/20 text-violet-200"
       : "border-slate-800 bg-slate-950 text-slate-300";
   return (
     <div className={`rounded border ${cls} px-2 py-2`}>
       <div className="text-2xl font-bold tabular-nums">
-        {value.toLocaleString()}
+        {typeof value === "number" ? value.toLocaleString() : value}
       </div>
       <div className="text-[10px] uppercase tracking-wider opacity-80">{label}</div>
     </div>
   );
+}
+
+// "14:32:11" — local time, just the clock for the live tail.
+function fmtClock(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, { hour12: false });
 }
 
 // ── Small reusable bits ──────────────────────────────────────────────────

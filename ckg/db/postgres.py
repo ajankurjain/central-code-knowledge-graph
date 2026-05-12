@@ -155,6 +155,33 @@ class AuditLog(Base):
     detail: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
+class ApiCall(Base):
+    """Per-request log used by the /integrations usage analytics.
+
+    One row per authenticated, non-meta HTTP request. `token_id` is null
+    when the request came through the bootstrap token (set via env). Old
+    rows are pruned by the `ckg.prune_api_calls` beat task — see
+    ckg/worker/scheduler.py.
+    """
+
+    __tablename__ = "api_calls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True,
+    )
+    token_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # Denormalised so the UI doesn't need a join when the token has since
+    # been revoked / renamed.
+    token_name: Mapped[str] = mapped_column(String(120), default="anonymous")
+    method: Mapped[str] = mapped_column(String(10))
+    # The route pattern (e.g. `/v1/repos/{repo_id}`) — NOT the raw path —
+    # so aggregation groups by endpoint instead of by individual repo id.
+    route: Mapped[str] = mapped_column(String(200), index=True)
+    status: Mapped[int] = mapped_column(Integer)
+    duration_ms: Mapped[int] = mapped_column(Integer)
+
+
 _engine = None
 _SessionLocal = None
 

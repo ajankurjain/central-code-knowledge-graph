@@ -130,6 +130,26 @@ def reconcile_stuck_ingests(
     return {"republished": republished, "reaped": reaped}
 
 
+@shared_task(name="ckg.prune_api_calls")
+def prune_api_calls(retention_days: int = 7) -> dict:
+    """Drop `api_calls` rows older than `retention_days`. Per-request rows
+    grow fast (one per call) so we keep a sliding window — the usage UI
+    only needs the last 24h-ish anyway."""
+    from sqlalchemy import delete
+
+    from ckg.db.postgres import ApiCall
+
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+    Session = get_sessionmaker()
+    with Session() as s:
+        result = s.execute(delete(ApiCall).where(ApiCall.ts < cutoff))
+        s.commit()
+    deleted = result.rowcount or 0
+    if deleted:
+        log.info("prune_api_calls", deleted=deleted, cutoff=cutoff.isoformat())
+    return {"deleted": deleted}
+
+
 @shared_task(name="ckg.run_source_sync")
 def run_source_sync(source_id: int, actor: str = "scheduler") -> dict:
     """Worker-side wrapper around the synchronous sync service so the
