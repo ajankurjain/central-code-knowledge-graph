@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { TokenGate } from "@/components/TokenGate";
@@ -34,12 +34,11 @@ export default function ArchitecturePage() {
 }
 
 // Compute-state machine driven by Inner. ComputeButton triggers it; Content
-// reads it to decide whether to poll, show a banner, or render the map.
+// reads it to decide whether to render a status banner alongside the map.
 type ComputeState =
   | { kind: "idle" }
-  | { kind: "queueing" }                   // POST in flight
-  | { kind: "computing"; startedAt: number } // POST accepted, polling for clusters
-  | { kind: "timed_out"; startedAt: number } // polled past budget, never saw clusters
+  | { kind: "computing"; startedAt: number } // POST in flight (sync)
+  | { kind: "timed_out"; startedAt: number } // request hung past budget
   | { kind: "error"; message: string };
 
 function Inner() {
@@ -118,10 +117,20 @@ function ComputeButton({
   state: ComputeState;
   onState: (s: ComputeState) => void;
 }) {
+  const qc = useQueryClient();
   const mut = useMutation({
     mutationFn: () => api.computeArchitecture(repoId),
-    onMutate: () => onState({ kind: "queueing" }),
-    onSuccess: () => onState({ kind: "computing", startedAt: Date.now() }),
+    // POST now runs synchronously (see ckg/api/routes/architecture.py).
+    // Enter `computing` on mutate so the elapsed-time banner shows for
+    // the whole duration of the request; flip back to idle when the POST
+    // returns success (Neo4j already has the new clusters at that point,
+    // we just need to refetch the GET).
+    onMutate: () => onState({ kind: "computing", startedAt: Date.now() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["arch", repoId] });
+      qc.invalidateQueries({ queryKey: ["arch-warnings", repoId] });
+      onState({ kind: "idle" });
+    },
     onError: (err: Error) =>
       onState({
         kind: "error",
@@ -129,17 +138,14 @@ function ComputeButton({
         message: err.message.slice(0, 400),
       }),
   });
-  const busy = state.kind === "queueing" || state.kind === "computing";
+  const busy = state.kind === "computing";
   return (
     <button
       onClick={() => mut.mutate()}
       disabled={busy}
       className="rounded bg-violet-500 px-4 py-2 text-sm font-medium text-violet-50 disabled:opacity-50 hover:bg-violet-400"
     >
-      {state.kind === "queueing" && "Queueing…"}
-      {state.kind === "computing" && "Computing…"}
-      {(state.kind === "idle" || state.kind === "timed_out" || state.kind === "error") &&
-        "Recompute"}
+      {busy ? "Computing…" : "Recompute"}
     </button>
   );
 }
@@ -153,10 +159,9 @@ function Content({
   computeState: ComputeState;
   onComputeState: (s: ComputeState) => void;
 }) {
-  // Poll aggressively while we're waiting for the worker; the first non-empty
-  // response flips us out of `computing`. If nothing shows up within the
-  // budget we surface "timed out / produced no clusters" so the user isn't
-  // stranded on a screen that looks identical to "never ran".
+  // Poll the GET aggressively while the POST is in flight so the cluster
+  // map appears as soon as it's persisted. The POST now runs synchronously
+  // so this is belt-and-braces; main signal is the mutation's onSuccess.
   const polling = computeState.kind === "computing";
   const arch = useQuery({
     queryKey: ["arch", repoId],
@@ -170,6 +175,17 @@ function Content({
     // an endpoint that returns nothing.
     enabled: (arch.data?.clusters.length ?? 0) > 0,
   });
+
+  // Re-render every second while computing so the "(Ns elapsed)" label
+  // ticks visibly. Without this it only updated when the react-query
+  // refetch fired (every 2.5s) — and if the worker queue was clogged,
+  // the data never arrived, so the label appeared frozen at 0s.
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (computeState.kind !== "computing") return;
+    const i = setInterval(() => forceTick((n) => n + 1), 1000);
+    return () => clearInterval(i);
+  }, [computeState.kind]);
 
   useEffect(() => {
     if (computeState.kind !== "computing") return;
@@ -188,13 +204,6 @@ function Content({
   if (arch.isLoading && !arch.data) return <Spinner />;
 
   const banner = (() => {
-    if (computeState.kind === "queueing") {
-      return (
-        <div className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
-          Sending recompute request…
-        </div>
-      );
-    }
     if (computeState.kind === "computing") {
       const secs = Math.round((Date.now() - computeState.startedAt) / 1000);
       return (
@@ -242,10 +251,28 @@ function Content({
         <p className="text-red-300">{(arch.error as Error).message}</p>
       )}
       {!hasMap && computeState.kind === "idle" && (
-        <p className="text-slate-400">
-          No architecture map yet. Click <b>Recompute</b> above — it'll run in
-          the worker and progress will show here while it's working.
-        </p>
+        <>
+          {arch.data?.edge_source === "no_files" ? (
+            <div className="rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+              <b>{repoId}</b> has 0 source files in the graph. The latest
+              ingest finished, but the configured branch contained nothing
+              parseable. Edit this repo's branch on the{" "}
+              <a
+                href={`/repos/${encodeURIComponent(repoId)}`}
+                className="underline"
+              >
+                repo page
+              </a>{" "}
+              and trigger a full ingest first.
+            </div>
+          ) : (
+            <p className="text-slate-400">
+              No architecture map yet. Click <b>Recompute</b> above — it
+              runs synchronously in the API and the map shows here as soon
+              as it lands.
+            </p>
+          )}
+        </>
       )}
       {hasMap && arch.data && (
         <>

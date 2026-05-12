@@ -11,7 +11,7 @@ from celery import shared_task
 from ckg.config import get_settings
 from ckg.db.postgres import IngestRun, Repo, get_sessionmaker
 from ckg.logging import configure_logging, get_logger
-from ckg.services.ingest import IngestMode, IngestStats
+from ckg.services.ingest import IngestMode, IngestStats, PermanentIngestError
 from ckg.services.ingest import ingest_repo as _ingest_repo
 
 configure_logging(get_settings().log_level)
@@ -74,6 +74,21 @@ def ingest_repo(self, repo_id: str, run_id: int, mode: str = "full") -> dict:
             s.commit()
         log.info("ingest_done", repo_id=repo_id, **stats.to_dict())
         return stats.to_dict()
+    except PermanentIngestError as exc:
+        # Wrong branch, missing repo, revoked auth — retrying won't help.
+        # Record the failure and let the task exit cleanly so the queue
+        # drains. Caller (operator) needs to fix the config and re-queue.
+        log.warning(
+            "ingest_permanent_failure", repo_id=repo_id, error=str(exc),
+        )
+        with Session() as s:
+            run = s.get(IngestRun, run_id)
+            if run is not None:
+                run.status = "failed"
+                run.finished_at = datetime.now(UTC)
+                run.error = _redact(str(exc))[:1900]
+                s.commit()
+        return {"status": "permanent_failure", "error": _redact(str(exc))[:200]}
     except Exception as exc:
         log.exception("ingest_failed", repo_id=repo_id)
         with Session() as s:

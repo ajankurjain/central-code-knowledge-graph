@@ -45,6 +45,14 @@ SKIP_PATTERNS = ("*.min.js", "*.map", "*.lock", "*.snap")
 BATCH = 500
 
 
+class PermanentIngestError(RuntimeError):
+    """Raised for ingest failures that won't fix themselves on retry:
+    wrong branch, repo deleted, auth permanently revoked, etc. The Celery
+    worker catches this specifically and skips the usual retry-with-
+    backoff so the queue doesn't get clogged with doomed-to-fail tasks.
+    """
+
+
 @dataclass
 class IngestStats:
     mode: IngestMode = "full"
@@ -118,7 +126,9 @@ def ingest_repo(
             if available
             else ""
         )
-        raise RuntimeError(
+        # PermanentIngestError so the worker doesn't burn three retries on
+        # a config issue that won't fix itself.
+        raise PermanentIngestError(
             f"Branch '{branch}' has no source files matching any registered "
             f"parser. Pick a different branch on the source or this repo."
             f"{hint}"
